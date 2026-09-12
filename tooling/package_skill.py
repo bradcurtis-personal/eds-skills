@@ -12,9 +12,12 @@ Modes:
              if no GitHub Release exists yet for its current skill.json
              version, package it as a standalone plugin, create the
              Release (tag <skill>/v<version>) with the .plugin zip
-             attached, then open (and merge) a PR that regenerates
-             marketplace.json / plugins/ so the org's GitHub-synced
-             plugin marketplace picks up the new version.
+             attached, then open a PR that regenerates marketplace.json /
+             plugins/ so the org's GitHub-synced plugin marketplace picks
+             up the new version. That PR is opened but NOT auto-merged --
+             GitHub's branch protection can't grant the built-in
+             GITHUB_TOKEN a bypass (only Apps/Users/Teams are eligible),
+             so a human merges it. See EDS-4 for the design discussion.
 
 Usage:
   python3 tooling/package_skill.py check --base <branch>
@@ -238,7 +241,7 @@ def regenerate_marketplace():
     )
 
 
-def open_and_merge_marketplace_pr(repo, token, base_branch="main"):
+def open_marketplace_pr(repo, token, base_branch="main"):
     result = run(["git", "status", "--porcelain", "plugins/", ".claude-plugin/"])
     if not result.stdout.strip():
         print("Marketplace files already up to date; no PR needed.")
@@ -275,22 +278,13 @@ def open_and_merge_marketplace_pr(repo, token, base_branch="main"):
     if status not in (200, 201):
         sys.exit(f"Failed to open marketplace sync PR: {pr}")
     number = pr["number"]
-    print(f"Opened PR #{number}: {pr['html_url']}")
-
-    status, merge_result = github_api(
-        "PUT",
-        f"/repos/{repo}/pulls/{number}/merge",
-        token,
-        {"merge_method": "squash"},
+    print(
+        f"Opened PR #{number}: {pr['html_url']}\n"
+        f"This PR is fully generated (marketplace.json / plugins/ derived "
+        f"from skills/*/skill.json and skills/*/SKILL.md) -- merge it "
+        f"whenever convenient to publish the new version(s) to the org's "
+        f"synced plugin marketplace."
     )
-    if status == 200:
-        print(f"Auto-merged PR #{number}.")
-    else:
-        print(
-            f"WARNING: could not auto-merge PR #{number} ({merge_result}). "
-            f"It likely needs a manual merge, or branch protection needs an "
-            f"exception for eds-skills-bot / GitHub Actions."
-        )
 
 
 def cmd_release():
@@ -313,7 +307,7 @@ def cmd_release():
         create_release(repo, tag, name, version, zip_path, token, commit_sha)
 
     regenerate_marketplace()
-    open_and_merge_marketplace_pr(repo, token)
+    open_marketplace_pr(repo, token)
 
 
 def main():
