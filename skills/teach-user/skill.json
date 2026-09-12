@@ -1,12 +1,12 @@
 {
   "name": "teach-user",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "category": "system",
   "layer": null,
   "rank": 0,
-  "description": "Overrides default speed-mode and shifts into explanation/teaching mode when the user wants something explained or taught rather than just delivered.",
-  "inputs": "An explicit signal from the user that they want something explained (e.g. 'explain this', 'how does this work', 'walk me through it', 'teach me').",
-  "outputs": "Slower-paced, explanatory conversational responses for the duration of the invocation, plus one new subpage under the Notion 'Learning' index per explanation given.",
+  "description": "Overrides default speed-mode and shifts into depth-calibrated explanation/teaching mode when the user wants something explained or taught rather than just delivered.",
+  "inputs": "An explicit signal from the user that they want something explained (e.g. 'explain this', 'how does this work', 'walk me through it', 'help me understand', 'teach me'), plus an optional depth preference (short version vs. in depth) and, at any point, an opt-out signal (e.g. 'just do it', 'skip the explanation').",
+  "outputs": "Slower-paced, depth-calibrated explanatory conversational responses for the duration of the invocation, plus one new subpage under the Notion 'Learning' index per explanation given, containing a cleaned-up (non-transcript) writeup.",
   "dependencies": ["Notion 'Learning' index page"],
   "stack": ["Cowork Skill (SKILL.md)"],
   "runtime-independent": false,
@@ -16,5 +16,9 @@
     "format": "notion-page",
     "backend": "notion",
     "note": "Exception to the standard flat-file/CloudWatch logging backend in SKILL_FRAMEWORK.md, since this skill has no main.py and no traditional runtime output. Each invocation's log IS a new subpage under the Notion 'Learning' index rather than a JSON log line."
+  },
+  "changelog": {
+    "1.1.0": "EDS-5: broadened SKILL.md trigger vocabulary, added explicit negative-trigger examples, added a mid-explanation opt-out, added a depth preference (short vs. in-depth), and clarified Notion logs should be cleaned-up writeups rather than verbatim transcripts.",
+    "1.0.0": "EDS-2: initial build."
   }
 }

@@ -8,7 +8,9 @@ required content rather than runtime behavior:
      fields from SKILL_FRAMEWORK.md.
   2. SKILL.md exists, has valid YAML frontmatter with name + description.
   3. SKILL.md's body actually contains the behaviors this skill promises:
-     the offer to go deeper/move on, and the Notion "Learning" logging step.
+     the offer to go deeper/move on, the Notion "Learning" logging step,
+     the depth-preference question, the mid-explanation opt-out, and
+     negative-trigger guidance (EDS-5).
 """
 
 import json
@@ -53,8 +55,21 @@ def test_skill_md_declares_required_behaviors():
         "SKILL.md must reference returning to default speed-mode"
 
 
+def test_skill_md_declares_eds5_behaviors():
+    text = (SKILL_DIR / "SKILL.md").read_text().lower()
+    assert "depth" in text, \
+        "SKILL.md must let the user set explanation depth (EDS-5)"
+    assert "opt-out" in text or "skip the explanation" in text or "skip ahead" in text, \
+        "SKILL.md must describe a mid-explanation opt-out (EDS-5)"
+    assert "do not invoke" in text, \
+        "SKILL.md must include explicit negative-trigger examples (EDS-5)"
+    assert "cleaned-up" in text or "cleaned up" in text, \
+        "SKILL.md must clarify Notion logs are cleaned-up writeups, not transcripts (EDS-5)"
+
+
 if __name__ == "__main__":
     test_skill_json_valid_and_complete()
     test_skill_md_has_valid_frontmatter()
     test_skill_md_declares_required_behaviors()
+    test_skill_md_declares_eds5_behaviors()
     print("All teach-user contract tests passed.")

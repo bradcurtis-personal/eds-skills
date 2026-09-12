@@ -4,16 +4,16 @@
 
 ## What it does
 
-Overrides the default "speed by default" behavior for a single interaction when the user wants something explained or taught rather than just delivered. While active, it slows down, explains the what/why/context behind the work, offers to go deeper, and logs the explanation as a new subpage under the Notion "Learning" index.
+Overrides the default "speed by default" behavior for a single interaction when the user wants something explained or taught rather than just delivered. While active, it asks (once) how much depth the user wants, slows down, explains the what/why/context behind the work at that depth, offers to go deeper or move on after each explanation, and logs a cleaned-up writeup of each explanation as a new subpage under the Notion "Learning" index. It exits back to speed-mode immediately if the user signals they want to skip ahead, even mid-explanation.
 
 ## How to invoke it
 
-Ask to have something explained, taught, or walked through. This skill is not invoked by default — normal work proceeds at speed unless this skill is explicitly triggered.
+Ask to have something explained, taught, or walked through — e.g. "explain this," "walk me through it," "help me understand," "why does this work this way," "break this down for me," "what's going on under the hood," "teach me." This skill is not invoked by default, and technical difficulty alone isn't a trigger — normal work proceeds at speed unless explanation is explicitly requested.
 
 ## What it produces
 
-- Explanatory, slower-paced responses for the duration of the invocation.
-- One new Notion subpage per explanation, filed under the "Learning" index page, capturing what was explained.
+- Explanatory, depth-calibrated responses for the duration of the invocation.
+- One new Notion subpage per explanation, filed under the "Learning" index page — a cleaned-up, durable writeup rather than a verbatim transcript.
 
 ## Structure
 
@@ -29,3 +29,8 @@ This is a pure-instruction system skill — it has no logic file (no `main.py` o
 ## Dependencies
 
 Requires a Notion "Learning" index page to exist and be shared with the workspace's Notion integration.
+
+## Version history
+
+- **1.1.0** (EDS-5) — Broadened trigger vocabulary in the description itself, added explicit negative-trigger examples, added a mid-explanation opt-out, added a depth preference (short vs. in-depth), clarified Notion logs should be cleaned-up writeups.
+- **1.0.0** (EDS-2) — Initial build.
