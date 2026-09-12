@@ -1,0 +1,20 @@
+{
+  "name": "teach-user",
+  "version": "1.0.0",
+  "category": "system",
+  "layer": null,
+  "rank": 0,
+  "description": "Overrides default speed-mode and shifts into explanation/teaching mode when the user wants something explained or taught rather than just delivered.",
+  "inputs": "An explicit signal from the user that they want something explained (e.g. 'explain this', 'how does this work', 'walk me through it', 'teach me').",
+  "outputs": "Slower-paced, explanatory conversational responses for the duration of the invocation, plus one new subpage under the Notion 'Learning' index per explanation given.",
+  "dependencies": ["Notion 'Learning' index page"],
+  "stack": ["Cowork Skill (SKILL.md)"],
+  "runtime-independent": false,
+  "runtime-independent-rationale": "teach-user's entire output IS an AI explaining something in the moment — there is no artifact that runs independently of the AI afterward, unlike craft skills whose output (code, firmware, config) is expected to run standalone at runtime. This is an accepted, permanent exception, not a gap to close later.",
+  "logging": {
+    "level": "info",
+    "format": "notion-page",
+    "backend": "notion",
+    "note": "Exception to the standard flat-file/CloudWatch logging backend in SKILL_FRAMEWORK.md, since this skill has no main.py and no traditional runtime output. Each invocation's log IS a new subpage under the Notion 'Learning' index rather than a JSON log line."
+  }
+}
