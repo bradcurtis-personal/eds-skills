@@ -5,6 +5,12 @@
   },
   "plugins": [
     {
+      "name": "skill-create",
+      "source": "./plugins/skill-create",
+      "description": "Scaffolds a new skill folder that already conforms to SKILL_FRAMEWORK.md, from a declared set of metadata.",
+      "version": "1.0.0"
+    },
+    {
       "name": "teach-user",
       "source": "./plugins/teach-user",
       "description": "Overrides default speed-mode and shifts into depth-calibrated explanation/teaching mode when the user wants something explained or taught rather than just delivered.",
