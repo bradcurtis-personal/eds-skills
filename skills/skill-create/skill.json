@@ -1,0 +1,19 @@
+{
+  "name": "skill-create",
+  "version": "1.0.0",
+  "category": "meta",
+  "layer": "Design",
+  "rank": 1,
+  "description": "Scaffolds a new skill folder that already conforms to SKILL_FRAMEWORK.md, from a declared set of metadata.",
+  "inputs": "The required skill.json metadata fields per SKILL_FRAMEWORK.md (name, version, category, layer, rank, description, inputs, outputs, dependencies, stack, runtime-independent, logging), gathered conversationally by Cowork before this skill's logic file runs.",
+  "outputs": "A new skill folder under /skills/<name>/ containing skill.json, the correct logic file for the declared stack (or none, for an instruction-only skill), README.md, test.py, and SKILL.md -- written to the local filesystem, protocol: direct file output.",
+  "dependencies": [],
+  "stack": ["Python"],
+  "runtime-independent": true,
+  "runtime-independent-rationale": "skill-create's output is a scaffolded skill folder on disk -- once main.py finishes running, the resulting files exist and are usable independent of any further AI involvement, same as any other craft/meta skill's generated artifact.",
+  "logging": {
+    "level": "info",
+    "format": "json",
+    "backend": "flat-file"
+  }
+}
