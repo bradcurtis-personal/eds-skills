@@ -54,6 +54,7 @@ def test_scaffolds_python_craft_skill():
         assert (skill_dir / "skill.json").exists()
         assert (skill_dir / "main.py").exists()
         assert (skill_dir / "README.md").exists()
+        assert (skill_dir / "SECURITY.md").exists()
         assert (skill_dir / "SKILL.md").exists()
         assert (skill_dir / "test.py").exists()
 
@@ -74,6 +75,11 @@ def test_scaffolds_python_craft_skill():
                          "## Structure", "## Version history"):
             assert section in readme_text, f"README.md missing required section: {section}"
         assert "1.0.0" in readme_text  # seeded initial version entry
+
+        security_text = (skill_dir / "SECURITY.md").read_text()
+        assert security_text.startswith("# Security")
+        assert "Trust boundary" in security_text
+        assert "TODO" in security_text  # prompts a real trust-boundary review, not silently minimal
 
 
 def test_scaffolds_instruction_only_skill_with_no_logic_file():
@@ -172,6 +178,39 @@ def test_meta_skill_must_be_design_layer():
             pass
 
 
+def test_scaffold_always_includes_security_md():
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp)
+        meta = _base_meta(name="teach-example", category="system", layer=None,
+                           stack=["Cowork Skill (SKILL.md)"])
+        skill_dir, _ = main.scaffold(meta, out)
+        assert (skill_dir / "SECURITY.md").exists(), \
+            "SECURITY.md is a fixed required file for every skill, regardless of stack/category"
+
+
+def test_audit_flags_missing_security_md():
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp)
+        main.scaffold(_base_meta(name="no-security-doc"), out)
+        (out / "no-security-doc" / "SECURITY.md").unlink()
+
+        findings = main.audit("no-security-doc", out)
+        stale = [f for f in findings if f.status == "stale"]
+        assert any("SECURITY.md" in f.message for f in stale), \
+            f"expected a stale finding about the missing SECURITY.md: {findings}"
+
+
+def test_audit_does_not_flag_present_security_md():
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp)
+        main.scaffold(_base_meta(name="has-security-doc"), out)
+
+        findings = main.audit("has-security-doc", out)
+        stale = [f for f in findings if f.status == "stale"]
+        assert not any("SECURITY.md" in f.message for f in stale), \
+            f"SECURITY.md is present, should not be flagged stale: {findings}"
+
+
 def test_audit_reports_missing_skill_as_error():
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp)
@@ -263,6 +302,9 @@ if __name__ == "__main__":
     test_naming_convention_is_enforced()
     test_does_not_overwrite_existing_skill()
     test_meta_skill_must_be_design_layer()
+    test_scaffold_always_includes_security_md()
+    test_audit_flags_missing_security_md()
+    test_audit_does_not_flag_present_security_md()
     test_audit_reports_missing_skill_as_error()
     test_audit_clean_skill_is_all_ok()
     test_audit_flags_missing_skill_json_field()

@@ -6,8 +6,9 @@ Meta-skill: scaffolds a new skill folder under /skills/ that already
 conforms to SKILL_FRAMEWORK.md -- correct structure, required metadata
 fields present, naming convention enforced, the correct logic file for
 the declared stack (or none, for an instruction-only skill), a generated
-SKILL.md (content depth matched to the skill's category), and a test.py
-stub pre-filled with the declared inputs/outputs.
+SKILL.md (content depth matched to the skill's category), a SECURITY.md
+stating the skill's trust boundary (minimal template by default), and a
+test.py stub pre-filled with the declared inputs/outputs.
 
 This script does the deterministic scaffolding. Gathering the metadata
 from the user is Cowork's job, per SKILL.md's instructions -- by the time
@@ -247,6 +248,29 @@ def build_skill_json(meta):
     return json.dumps(ordered, indent=2) + "\n"
 
 
+def build_security_md(meta):
+    """Every skill gets a SECURITY.md stating its trust boundary explicitly,
+    per SKILL_FRAMEWORK.md's Physical Structure. skill-create always scaffolds
+    the minimal "no trust boundary" template -- whether a skill actually
+    crosses one (shared-config mutation, critical-path execution, network
+    ports, shell execution, another tool's data) is a judgment call made
+    conversationally when the skill is built, same as SKILL.md's "When to
+    invoke" and README's "How to invoke it" TODOs. The scaffold leaves an
+    explicit TODO so it's never silently left at the minimal template when
+    a real trust boundary exists.
+    """
+    return (
+        "# Security\n\n"
+        "**Trust boundary:** None -- this skill reads its declared inputs and writes only its "
+        "own generated output files. It does not mutate shared config, execute arbitrary code, "
+        "open network ports, or cross any other trust boundary.\n\n"
+        "TODO: if this skill actually crosses a trust boundary (shared-config mutation, "
+        "critical-path execution, network ports, shell execution, handling another tool's data), "
+        "replace the line above and fill in the fuller shape from SKILL_FRAMEWORK.md's "
+        "`SECURITY.md` section: What this skill touches / Why that's safe / Out of scope.\n"
+    )
+
+
 def build_logic_file(meta, logic_filename, allow_missing_logging_bootstrap=False):
     if logic_filename is None:
         return None
@@ -291,6 +315,7 @@ def build_readme(meta, logic_filename):
     if logic_filename:
         file_list.append(f"`{logic_filename}` | This skill's logic")
     file_list.append("`README.md` | This file")
+    file_list.append("`SECURITY.md` | This skill's trust boundary -- see SKILL_FRAMEWORK.md's SECURITY.md section")
     file_list.append("`test.py` | Acceptance/contract test")
     file_list.append("`SKILL.md` | Cowork-invocable packaging of this skill")
     lines.append("| File | Purpose |")
@@ -501,6 +526,22 @@ def audit(name, skills_dir):
             "craft/meta: short summary pointing to README.md).",
         ))
 
+    # ---- SECURITY.md ----
+    if not (skill_dir / "SECURITY.md").exists():
+        findings.append(AuditFinding(
+            "stale",
+            "SECURITY.md is missing -- required for every skill per SKILL_FRAMEWORK.md's "
+            "Physical Structure, even when the honest content is the minimal 'no trust "
+            "boundary' template.",
+        ))
+    else:
+        findings.append(AuditFinding("ok", "SECURITY.md present."))
+        findings.append(AuditFinding(
+            "note",
+            "SECURITY.md content accuracy can't be checked mechanically -- confirm it still "
+            "reflects this skill's real trust boundary (or honestly states it has none).",
+        ))
+
     # ---- README.md / test.py presence ----
     README_REQUIRED_SECTIONS = [
         "## What it does", "## How to invoke it", "## What it produces",
@@ -539,6 +580,7 @@ def scaffold(meta, output_dir, allow_missing_logging_bootstrap=False):
     logic_content = build_logic_file(meta, logic_filename, allow_missing_logging_bootstrap) if logic_filename else None
     skill_json_content = build_skill_json(meta)
     readme_content = build_readme(meta, logic_filename)
+    security_md_content = build_security_md(meta)
     skill_md_content = build_skill_md(meta)
     test_py_content = build_test_py(meta, logic_filename)
 
@@ -551,6 +593,7 @@ def scaffold(meta, output_dir, allow_missing_logging_bootstrap=False):
     if logic_filename:
         (skill_dir / logic_filename).write_text(logic_content)
     (skill_dir / "README.md").write_text(readme_content)
+    (skill_dir / "SECURITY.md").write_text(security_md_content)
     (skill_dir / "SKILL.md").write_text(skill_md_content)
     (skill_dir / "test.py").write_text(test_py_content)
 
@@ -627,7 +670,7 @@ def main():
         sys.exit(1)
 
     print(f"Scaffolded '{meta['name']}' at {skill_dir}")
-    print(f"  skill.json, README.md, SKILL.md, test.py"
+    print(f"  skill.json, README.md, SECURITY.md, SKILL.md, test.py"
           + (f", {logic_filename}" if logic_filename else " (no logic file -- instruction-only skill)"))
     print("Next: fill in the real logic, real README content, and real test.py assertions,")
     print("then run the Definition of Done sequence before this skill is considered done.")

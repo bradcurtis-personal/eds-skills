@@ -9,7 +9,7 @@ Scaffolds a new skill folder that already conforms to `SKILL_FRAMEWORK.md`, from
 
 **When to invoke (create mode):** the user wants to create, build, or scaffold a new skill.
 
-**What create mode produces:** a new folder at `/skills/<name>/` containing `skill.json`, the correct logic file for the declared stack (or none), `README.md`, `SKILL.md`, and a `test.py` stub — a correctly-shaped starting point, not a finished skill.
+**What create mode produces:** a new folder at `/skills/<name>/` containing `skill.json`, the correct logic file for the declared stack (or none), `README.md`, `SECURITY.md` (minimal "no trust boundary" template by default, flagged with a TODO to fill in the fuller shape if this skill actually crosses one), `SKILL.md`, and a `test.py` stub — a correctly-shaped starting point, not a finished skill.
 
 Before running `main.py` in create mode, gather the required metadata conversationally: `name`, `version`, `category`, `layer`, `rank`, `description`, `inputs`, `outputs`, `dependencies`, `stack`, `runtime-independent`, `logging`. See `SKILL_FRAMEWORK.md`'s Skill Metadata table for what each field means, and `AUTONOMY_RANKS.md` for how to pick `rank`.
 

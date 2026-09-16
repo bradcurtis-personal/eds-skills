@@ -32,5 +32,6 @@ Requires a Notion "Learning" index page to exist and be shared with the workspac
 
 ## Version history
 
+- **1.1.1** (EDS-7) — Added `SECURITY.md` (minimal "no trust boundary" template) to comply with `SKILL_FRAMEWORK.md`'s Physical Structure requirement, added in EDS-6. No behavioral change.
 - **1.1.0** (EDS-5) — Broadened trigger vocabulary in the description itself, added explicit negative-trigger examples, added a mid-explanation opt-out, added a depth preference (short vs. in-depth), clarified Notion logs should be cleaned-up writeups.
 - **1.0.0** (EDS-2) — Initial build.
