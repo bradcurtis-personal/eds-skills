@@ -1,10 +1,13 @@
 name: Skill PR Check
 
+# Deliberately NOT path-filtered. This check is a required status check on
+# main, so it has to report on every PR -- including ones that touch nothing
+# under skills/ (e.g. the generated marketplace-sync PR). A path filter would
+# leave those PRs "Expected -- waiting for status" forever. package_skill.py
+# check already no-ops ("No skill files changed") when no skill changed.
 on:
   pull_request:
     branches: [main]
-    paths:
-      - 'skills/**'
 
 jobs:
   check:
