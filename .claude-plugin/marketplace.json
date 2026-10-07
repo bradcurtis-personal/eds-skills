@@ -5,6 +5,12 @@
   },
   "plugins": [
     {
+      "name": "pipeline-smoke-test",
+      "source": "./plugins/pipeline-smoke-test",
+      "description": "Test fixture for the eds-skills pipeline that prints a greeting with a UTC timestamp and does nothing else.",
+      "version": "1.0.0"
+    },
+    {
       "name": "skill-create",
       "source": "./plugins/skill-create",
       "description": "Scaffolds a new skill folder that already conforms to SKILL_FRAMEWORK.md, from a declared set of metadata.",
