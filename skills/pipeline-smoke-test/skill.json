@@ -1,0 +1,20 @@
+{
+  "name": "pipeline-smoke-test",
+  "version": "1.0.0",
+  "category": "craft",
+  "layer": "Infrastructure",
+  "rank": 0,
+  "description": "Test fixture for the eds-skills pipeline that prints a greeting with a UTC timestamp and does nothing else.",
+  "inputs": "None. Takes no arguments and reads no files.",
+  "outputs": "One line on stdout, protocol: direct text output, schema: 'Hello from pipeline-smoke-test at <ISO-8601 UTC timestamp>'.",
+  "dependencies": [],
+  "stack": [
+    "Python"
+  ],
+  "runtime-independent": true,
+  "logging": {
+    "level": "info",
+    "format": "json",
+    "backend": "flat-file"
+  }
+}
