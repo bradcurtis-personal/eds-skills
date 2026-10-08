@@ -461,7 +461,85 @@ def test_audit_never_writes_anything():
         assert set(before.keys()) == set(after.keys()), "audit must never add/remove files"
 
 
+def test_scaffolded_bootstrap_adds_one_handler_when_imported_twice():
+    # EDS-37: the generated bootstrap called logger.addHandler unconditionally,
+    # so importing or reloading a scaffolded main.py twice in one process
+    # duplicated every log line. Runs in a subprocess from an empty cwd.
+    with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as empty_cwd:
+        skill_dir, _ = main.scaffold(_base_meta(name="twice-probe"), Path(tmp))
+        probe = (
+            "import importlib.util, logging, sys\n"
+            "path = sys.argv[1]\n"
+            "for i in range(2):\n"
+            "    spec = importlib.util.spec_from_file_location('twice_probe_main', path)\n"
+            "    spec.loader.exec_module(importlib.util.module_from_spec(spec))\n"
+            "print(len(logging.getLogger('twice-probe').handlers))\n"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", probe, str(skill_dir / "main.py")],
+            cwd=empty_cwd, capture_output=True, text=True,
+        )
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.strip() == "1", \
+            f"expected exactly one handler after two imports, got {result.stdout.strip()!r}"
+
+
+def _audit_cli(out, name):
+    return subprocess.run(
+        [sys.executable, str(MAIN_PATH), "--audit", name, "--output-dir", str(out)],
+        capture_output=True, text=True, cwd=str(out),
+    )
+
+
+def test_audit_flags_old_bootstrap_without_makedirs_and_passes_fresh_one():
+    # EDS-37: skills scaffolded before the EDS-16 fix keep a bootstrap that
+    # opens FileHandler("logs/...") without creating logs/, and --audit used
+    # to report them clean.
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp)
+        main.scaffold(_base_meta(name="fresh-boot"), out)
+        _finish_scaffold(out / "fresh-boot")
+        fresh = _audit_cli(out, "fresh-boot")
+        assert fresh.returncode == 0, fresh.stdout + fresh.stderr
+        assert "0 stale" in fresh.stdout, fresh.stdout
+        assert "[note] main.py's logging bootstrap" not in fresh.stdout, fresh.stdout
+
+        main.scaffold(_base_meta(name="old-boot"), out)
+        _finish_scaffold(out / "old-boot")
+        logic = out / "old-boot" / "main.py"
+        text = logic.read_text(encoding="utf-8")
+        old_text = text.replace('    os.makedirs("logs", exist_ok=True)\n', "    pass\n")
+        assert old_text != text, "template no longer contains the makedirs line this test strips"
+        assert "makedirs" not in old_text
+        logic.write_text(old_text, encoding="utf-8")
+        old = _audit_cli(out, "old-boot")
+        assert old.returncode != 0, old.stdout + old.stderr
+        stale = [l for l in old.stdout.splitlines() if l.strip().startswith("[stale]")]
+        assert len(stale) == 1 and "logging bootstrap" in stale[0] and "logs directory" in stale[0], old.stdout
+
+
+def test_audit_unguarded_add_handler_is_a_note_not_stale():
+    # EDS-37: existing skills may lack the handler guard; the PR gate fails on
+    # stale, so this is reported for manual review only.
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp)
+        main.scaffold(_base_meta(name="no-guard"), out)
+        _finish_scaffold(out / "no-guard")
+        logic = out / "no-guard" / "main.py"
+        text = logic.read_text(encoding="utf-8")
+        unguarded = text.replace("if not logger.handlers:\n    logger.addHandler(handler)",
+                                 "logger.addHandler(handler)")
+        assert unguarded != text
+        logic.write_text(unguarded, encoding="utf-8")
+        findings = main.audit("no-guard", out)
+        assert not [f for f in findings if f.status == "stale"], findings
+        assert any(f.status == "note" and "addHandler" in f.message for f in findings), findings
+
+
 if __name__ == "__main__":
+    test_scaffolded_bootstrap_adds_one_handler_when_imported_twice()
+    test_audit_flags_old_bootstrap_without_makedirs_and_passes_fresh_one()
+    test_audit_unguarded_add_handler_is_a_note_not_stale()
     test_scaffolds_python_craft_skill()
     test_description_with_colon_space_is_valid_yaml_and_round_trips()
     test_description_with_quotes_hash_backslash_newline_round_trips()
