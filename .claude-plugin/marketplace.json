@@ -8,7 +8,7 @@
       "name": "pipeline-smoke-test",
       "source": "./plugins/pipeline-smoke-test",
       "description": "Test fixture for the eds-skills pipeline that prints a greeting with a UTC timestamp and does nothing else.",
-      "version": "1.0.1"
+      "version": "1.0.2"
     },
     {
       "name": "skill-create",

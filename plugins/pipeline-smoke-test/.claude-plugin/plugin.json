@@ -1,5 +1,5 @@
 {
   "name": "pipeline-smoke-test",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Test fixture for the eds-skills pipeline that prints a greeting with a UTC timestamp and does nothing else."
 }
