@@ -536,7 +536,208 @@ def test_audit_unguarded_add_handler_is_a_note_not_stale():
         assert any(f.status == "note" and "addHandler" in f.message for f in findings), findings
 
 
+# ---------- EDS-39: the stdlib frontmatter fallback (no PyYAML) ----------
+
+# Runs main.py with `import yaml` made to fail, exactly as in a venv that has
+# no PyYAML, so the fallback is exercised even where this test run has PyYAML.
+_NO_YAML_RUNNER = (
+    "import runpy, sys\n"
+    "sys.modules['yaml'] = None\n"
+    "sys.argv = sys.argv[1:]\n"
+    "runpy.run_path(sys.argv[0], run_name='__main__')\n"
+)
+
+_NO_YAML_PARSER = (
+    "import importlib.util, json, sys\n"
+    "sys.modules['yaml'] = None\n"
+    "spec = importlib.util.spec_from_file_location('sc_main', sys.argv[1])\n"
+    "m = importlib.util.module_from_spec(spec)\n"
+    "spec.loader.exec_module(m)\n"
+    "out = []\n"
+    "for text in json.loads(sys.stdin.read()):\n"
+    "    try:\n"
+    "        out.append({'ok': m.parse_frontmatter(text)})\n"
+    "    except ValueError as e:\n"
+    "        out.append({'error': str(e)})\n"
+    "print(json.dumps(out))\n"
+)
+
+
+def _audit_cli_without_yaml(skills_dir, name):
+    with tempfile.TemporaryDirectory() as cwd:
+        return subprocess.run(
+            [sys.executable, "-c", _NO_YAML_RUNNER, str(MAIN_PATH),
+             "--audit", name, "--output-dir", str(skills_dir)],
+            capture_output=True, text=True, cwd=cwd,
+        )
+
+
+# (raw `description:` value, the str the fallback and yaml.safe_load must both return)
+ACCEPTED_DESCRIPTIONS = [
+    ("Prints a greeting.", "Prints a greeting."),
+    ("padded   ", "padded"),
+    ('Says "hi," then \u2014 leaves. Not [a list] or {a map}, it\'s fine', 'Says "hi," then \u2014 leaves. Not [a list] or {a map}, it\'s fine'),
+    ("Reads http://x.y/z and a:b", "Reads http://x.y/z and a:b"),
+    ("C# and F# tools", "C# and F# tools"),
+    ("3D models for printing", "3D models for printing"),
+    ("Yes and no questions", "Yes and no questions"),
+    ("Null pointer guide", "Null pointer guide"),
+    ("1.2.3", "1.2.3"),
+    ("Zus\u00e4tzlich \u2014 na\u00efve, start-stop.", "Zus\u00e4tzlich \u2014 na\u00efve, start-stop."),
+    ("'Says hi.'", "Says hi."),
+    ("'It''s a skill: really # yes'", "It's a skill: really # yes"),
+    ("'Path C:\\x \\n \"q\"'", 'Path C:\\x \\n "q"'),
+    ('"Says hi."', "Says hi."),
+    ('"Line\\nbreak \\"q\\" \\\\ \\u00fc: # x"', 'Line\nbreak "q" \\ \u00fc: # x'),
+    ('"padded"   ', "padded"),
+    (json.dumps('Says "hi": it\'s a # comment, C:\\path\nsecond line, \u00fcn\u00efcode'),
+     'Says "hi": it\'s a # comment, C:\\path\nsecond line, \u00fcn\u00efcode'),
+]
+
+# (raw `description:` value, text the failure message must contain,
+#  whether yaml.safe_load must also fail: True where the value is simply invalid YAML)
+REJECTED_DESCRIPTIONS = [
+    ("", "empty value", False),
+    ("|\n  literal\n  block", "block", False),
+    (">-\n  folded\n  block", "block", False),
+    ("folded text\n  continues here", "PyYAML", False),
+    ("[a, b]", "flow collection", False),
+    ("{a: b}", "flow collection", False),
+    ("&anchor value", "anchor, alias or tag", False),
+    ("*alias", "anchor, alias or tag", False),
+    ("!!str 5", "anchor, alias or tag", False),
+    ("%percent", "indicator", False),
+    ("@at", "indicator", False),
+    ("`tick", "indicator", False),
+    ("- item", "indicator", False),
+    ("? key", "indicator", False),
+    ("# just a comment", "indicator", False),
+    ("has a: colon", "invalid YAML", True),
+    ("trailing colon:", "invalid YAML", True),
+    ("text # trailing comment", "comment", False),
+    ("123", "number, boolean, null or date", False),
+    ("1.5", "number, boolean, null or date", False),
+    ("true", "number, boolean, null or date", False),
+    ("Off", "number, boolean, null or date", False),
+    ("null", "number, boolean, null or date", False),
+    ("~", "number, boolean, null or date", False),
+    ("2026-10-08", "number, boolean, null or date", False),
+    ("tab\there", "tab", True),
+    ('"x" # trailing comment', "cannot decode", False),
+    ('"a\\x41"', "cannot decode", False),
+    ('"\\e"', "cannot decode", False),
+    ('"\\ud83d\\ude00"', "surrogate", False),
+    ('"unterminated', "cannot decode", True),
+    ("'unterminated", "cannot decode", True),
+    ("'it's'", "cannot decode", True),
+    ("'x' # trailing comment", "cannot decode", False),
+    ("line\u2028break", "line-break character", True),
+    ("bell\x07char", "control character", True),
+]
+
+
+def _frontmatter_text(raw_description):
+    return f"---\nname: demo-skill\ndescription: {raw_description}\n---\n\nbody\n"
+
+
+def _fallback_results(texts):
+    probe = subprocess.run(
+        [sys.executable, "-c", _NO_YAML_PARSER, str(MAIN_PATH)],
+        input=json.dumps(texts), capture_output=True, text=True,
+    )
+    assert probe.returncode == 0, probe.stderr
+    return json.loads(probe.stdout)
+
+
+def _real_yaml():
+    try:
+        import yaml
+        return yaml
+    except ImportError:
+        return None
+
+
+def test_fallback_frontmatter_accepts_plain_single_and_double_quoted_scalars():
+    # EDS-39: without PyYAML the fallback accepted only a double-quoted
+    # description, so the repo's own plain-description SKILL.md files failed.
+    # Every accepted value must be exactly what yaml.safe_load returns.
+    yaml = _real_yaml()
+    results = _fallback_results([_frontmatter_text(raw) for raw, _ in ACCEPTED_DESCRIPTIONS])
+    for (raw, expected), result in zip(ACCEPTED_DESCRIPTIONS, results):
+        assert "ok" in result, f"fallback rejected {raw!r}: {result}"
+        assert result["ok"] == {"name": "demo-skill", "description": expected}, (raw, result)
+        if yaml is not None:
+            assert yaml.safe_load(_frontmatter_text(raw).split("---\n")[1]) == result["ok"], raw
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp)
+        for i, (raw, _) in enumerate(ACCEPTED_DESCRIPTIONS):
+            name = f"accept-{'abcdefghijklmnopqrstuvwxyz'[i]}"
+            skill_dir, _ = main.scaffold(_base_meta(name=name), out)
+            _finish_scaffold(skill_dir)
+            (skill_dir / "SKILL.md").write_text(
+                _frontmatter_text(raw).replace("demo-skill", name), encoding="utf-8")
+            audit = _audit_cli_without_yaml(out, name)
+            assert audit.returncode == 0, f"{raw!r}:\n{audit.stdout}{audit.stderr}"
+            assert "0 stale" in audit.stdout, audit.stdout
+
+
+def test_fallback_frontmatter_rejects_other_forms_with_a_clear_message():
+    yaml = _real_yaml()
+    results = _fallback_results([_frontmatter_text(raw) for raw, _, _ in REJECTED_DESCRIPTIONS])
+    for (raw, message, invalid_yaml), result in zip(REJECTED_DESCRIPTIONS, results):
+        assert "error" in result, f"fallback accepted {raw!r}: {result}"
+        assert message in result["error"], (raw, result)
+        if message != "invalid YAML":
+            assert "PyYAML" in result["error"], (raw, result)
+        if invalid_yaml and yaml is not None:
+            try:
+                yaml.safe_load(_frontmatter_text(raw).split("---\n")[1])
+            except yaml.YAMLError:
+                pass
+            else:
+                raise AssertionError(f"yaml.safe_load unexpectedly accepted {raw!r}")
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp)
+        for i, (raw, message, _) in enumerate(REJECTED_DESCRIPTIONS):
+            name = f"reject-{'abcdefghijklmnopqrstuvwxyz'[i // 26]}{'abcdefghijklmnopqrstuvwxyz'[i % 26]}"
+            skill_dir, _ = main.scaffold(_base_meta(name=name), out)
+            _finish_scaffold(skill_dir)
+            (skill_dir / "SKILL.md").write_text(
+                _frontmatter_text(raw).replace("demo-skill", name), encoding="utf-8")
+            audit = _audit_cli_without_yaml(out, name)
+            assert audit.returncode != 0, f"{raw!r}:\n{audit.stdout}{audit.stderr}"
+            assert "SKILL.md frontmatter does not parse" in audit.stdout, audit.stdout
+            assert message in audit.stdout, f"{raw!r}: {audit.stdout}"
+
+
+def test_fallback_frontmatter_rejects_non_mapping_and_malformed_lines():
+    results = _fallback_results([
+        "---\njust text\n---\n",
+        "---\nname:demo-skill\n---\n",
+        "---\n# only a comment\n---\n",
+        "---\nname: demo-skill\n  description: indented\n---\n",
+    ])
+    assert all("error" in r for r in results), results
+
+
+def test_audit_passes_for_every_skill_in_the_library_without_pyyaml():
+    # EDS-39: in a venv without PyYAML, `--audit` exited 1 on skill-create's and
+    # pipeline-smoke-test's own SKILL.md. Audit every real skill with `import
+    # yaml` blocked and require exit 0.
+    skills_dir = SKILL_DIR.parent
+    names = sorted(p.name for p in skills_dir.iterdir() if (p / "SKILL.md").exists())
+    assert {"skill-create", "pipeline-smoke-test", "teach-user"} <= set(names), names
+    for name in names:
+        audit = _audit_cli_without_yaml(skills_dir, name)
+        assert audit.returncode == 0, f"{name}:\n{audit.stdout}{audit.stderr}"
+        assert "0 stale" in audit.stdout, audit.stdout
+
+
 if __name__ == "__main__":
+    test_fallback_frontmatter_accepts_plain_single_and_double_quoted_scalars()
+    test_fallback_frontmatter_rejects_other_forms_with_a_clear_message()
+    test_fallback_frontmatter_rejects_non_mapping_and_malformed_lines()
+    test_audit_passes_for_every_skill_in_the_library_without_pyyaml()
     test_scaffolded_bootstrap_adds_one_handler_when_imported_twice()
     test_audit_flags_old_bootstrap_without_makedirs_and_passes_fresh_one()
     test_audit_unguarded_add_handler_is_a_note_not_stale()
