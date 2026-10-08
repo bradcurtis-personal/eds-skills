@@ -735,6 +735,56 @@ def _logging_bootstrap_findings(skill_dir, meta):
     return findings
 
 
+def _readme_structure_findings(skill_dir, readme_text):
+    """EDS-41: compare the README's Structure table with the files in the
+    skill folder. The README is the source for the Notion Skills Library entry
+    (DEFINITION_OF_DONE.md), so a file missing from the table silently yields
+    an incomplete entry.
+
+    Textual, like the other README checks: reads the first column of the table
+    rows under the `## Structure` heading and takes the backticked names (or
+    the bare cell text when there are none). Only regular files directly in
+    the skill folder count; dotfiles and subfolders (`logs/`, `__pycache__/`)
+    are ignored. A file in the folder that the table does not list is stale; a
+    listed name with no such file is a note.
+    """
+    lines = readme_text.splitlines()
+    start = next((i for i, l in enumerate(lines) if l.strip() == "## Structure"), None)
+    if start is None:
+        return []  # the missing-section finding already covers this
+    listed = set()
+    for line in lines[start + 1:]:
+        if line.startswith("## "):
+            break
+        if not line.lstrip().startswith("|"):
+            continue
+        cells = line.strip().strip("|").split("|")
+        first = cells[0].strip()
+        if not first or set(first) <= set("-: ") or first.lower() == "file":
+            continue
+        names = re.findall(r"`([^`]+)`", first)
+        listed.update(names if names else [first])
+    present = {p.name for p in skill_dir.iterdir() if p.is_file() and not p.name.startswith(".")}
+    findings = []
+    unlisted = sorted(present - listed)
+    if unlisted:
+        findings.append(AuditFinding(
+            "stale",
+            f"README.md's Structure table does not list: {', '.join(unlisted)} -- add a row for "
+            f"each file in the skill folder (the Skills Library entry is generated from this table).",
+        ))
+    else:
+        findings.append(AuditFinding("ok", "README.md's Structure table lists every file in the skill folder."))
+    missing = sorted(listed - present)
+    if missing:
+        findings.append(AuditFinding(
+            "note",
+            f"README.md's Structure table lists {', '.join(missing)}, which is not in the skill "
+            f"folder -- remove the row if the file is gone.",
+        ))
+    return findings
+
+
 def audit(name, skills_dir):
     """Read-only audit of an existing skill against current SKILL_FRAMEWORK.md
     rules. Never writes anything -- update mode is audit + report only per
@@ -884,6 +934,7 @@ def audit(name, skills_dir):
             ))
         else:
             findings.append(AuditFinding("ok", "README.md present with all required sections."))
+        findings.extend(_readme_structure_findings(skill_dir, readme_text))
 
     if not (skill_dir / "test.py").exists():
         findings.append(AuditFinding("stale", "test.py is missing."))
