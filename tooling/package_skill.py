@@ -326,6 +326,65 @@ def regenerate_marketplace():
     )
 
 
+SYNC_BRANCH_PREFIX = "bot/sync-marketplace-"
+
+
+def select_superseded_sync_prs(open_prs, repo, new_number):
+    """From a list of open PR objects (GitHub API shape), pick the sync PRs
+    that a newly opened PR supersedes: head branch starts with
+    bot/sync-marketplace-, head is in this repo (not a fork), and the number is
+    lower than the new PR's. Never the new PR, never any other PR."""
+    picked = []
+    for pr in open_prs:
+        head = pr.get("head") or {}
+        head_repo = (head.get("repo") or {}).get("full_name")
+        if (
+            pr.get("number") is not None
+            and pr["number"] < new_number
+            and str(head.get("ref", "")).startswith(SYNC_BRANCH_PREFIX)
+            and head_repo == repo
+        ):
+            picked.append(pr)
+    return picked
+
+
+def close_superseded_sync_prs(repo, token, new_number):
+    """Close older open sync PRs with a comment naming the PR that supersedes
+    them, then delete their branches. Best effort: a failure is reported but
+    never fails the release, because the new PR is already open."""
+    status, open_prs = github_api(
+        "GET", f"/repos/{repo}/pulls?state=open&per_page=100", token
+    )
+    if status != 200 or not isinstance(open_prs, list):
+        print(f"WARNING: could not list open PRs ({status}); older sync PRs left open.")
+        return
+    for pr in select_superseded_sync_prs(open_prs, repo, new_number):
+        number = pr["number"]
+        branch = pr["head"]["ref"]
+        status, _ = github_api(
+            "POST",
+            f"/repos/{repo}/issues/{number}/comments",
+            token,
+            {"body": f"Closing: superseded by #{new_number}, which regenerates "
+                     f"the marketplace files from a newer main. Merge #{new_number} instead."},
+        )
+        if status not in (200, 201):
+            print(f"WARNING: could not comment on #{number} ({status}).")
+        status, _ = github_api(
+            "PATCH", f"/repos/{repo}/pulls/{number}", token, {"state": "closed"}
+        )
+        if status != 200:
+            print(f"WARNING: could not close #{number} ({status}); leaving its branch.")
+            continue
+        status, _ = github_api(
+            "DELETE", f"/repos/{repo}/git/refs/heads/{branch}", token
+        )
+        if status != 204:
+            print(f"WARNING: closed #{number} but could not delete {branch} ({status}).")
+        else:
+            print(f"Closed #{number} (superseded by #{new_number}) and deleted {branch}.")
+
+
 def open_marketplace_pr(repo, token, base_branch="main"):
     result = run(["git", "status", "--porcelain", "plugins/", ".claude-plugin/"])
     if not result.stdout.strip():
@@ -355,8 +414,10 @@ def open_marketplace_pr(repo, token, base_branch="main"):
             "body": (
                 "Auto-generated: syncs marketplace.json and plugins/ with the "
                 "latest released skill versions. No human review needed -- "
-                "these files are fully derived from skills/*/skill.json and "
-                "skills/*/SKILL.md."
+                "these files are regenerated from skills/ (skill.json, "
+                "SKILL.md, the skill's logic file, README.md and "
+                "SECURITY.md). Older open sync PRs are closed automatically "
+                "when a newer one opens; merge only the newest."
             ),
         },
     )
@@ -365,11 +426,11 @@ def open_marketplace_pr(repo, token, base_branch="main"):
     number = pr["number"]
     print(
         f"Opened PR #{number}: {pr['html_url']}\n"
-        f"This PR is fully generated (marketplace.json / plugins/ derived "
-        f"from skills/*/skill.json and skills/*/SKILL.md) -- merge it "
-        f"whenever convenient to publish the new version(s) to the org's "
-        f"synced plugin marketplace."
+        f"This PR is fully generated (marketplace.json / plugins/ regenerated "
+        f"from skills/) -- merge it whenever convenient to publish the new "
+        f"version(s) to the org's synced plugin marketplace."
     )
+    close_superseded_sync_prs(repo, token, number)
 
 
 def cmd_release():
