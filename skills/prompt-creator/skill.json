@@ -1,0 +1,24 @@
+{
+  "name": "prompt-creator",
+  "version": "1.0.0",
+  "category": "craft",
+  "layer": "Design",
+  "rank": 1,
+  "description": "Acts as a prompt engineer: when the user asks to write, draft or tidy a prompt for a Claude Code session, a Cowork session or a run of sequential subagents, reads the current session for context, asks only about gaps in one batch, and produces a short prompt tuned to the target.",
+  "inputs": "A request to write, draft or tidy a prompt for Claude Code, Cowork or a subagent run, plus the context of the session it runs in (goal, ticket keys, repos, constraints, decisions made) and answers to a single batch of gap questions.",
+  "outputs": "One prompt in a code block, tuned to the target. When a Jira ticket exists, the same prompt posted as a comment on it. Protocol: conversational text, plus a Jira comment.",
+  "dependencies": [
+    "Jira connector (only to post the prompt as a ticket comment)"
+  ],
+  "stack": [
+    "Cowork Skill (SKILL.md)"
+  ],
+  "runtime-independent": false,
+  "logging": {
+    "level": "info",
+    "format": "none",
+    "backend": "none",
+    "note": "Instruction-only skill with no logic file and no runtime output of its own; the prompt and its Jira comment are the record."
+  },
+  "runtime-independent-rationale": "prompt-creator's output is a prompt written by an AI in the moment from the live session's context; there is no artifact that runs without AI involvement. Accepted exception, same as teach-user."
+}
