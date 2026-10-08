@@ -1,0 +1,5 @@
+{
+  "name": "prompt-creator",
+  "version": "1.0.0",
+  "description": "Acts as a prompt engineer: when the user asks to write, draft or tidy a prompt for a Claude Code session, a Cowork session or a run of sequential subagents, reads the current session for context, asks only about gaps in one batch, and produces a short prompt tuned to the target."
+}
