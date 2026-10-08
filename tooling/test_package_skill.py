@@ -289,3 +289,8 @@ if __name__ == "__main__":
     test_stack_table_matches_skill_create()
     test_unknown_stack_fails_loudly()
     print("All package_skill packaging tests passed.")
+    # EDS-11: CI runs only this file, so it also runs the local-preflight
+    # tests (tooling/test_preflight.py), which are stubbed and never touch the
+    # network. This avoids editing .github/workflows/.
+    import test_preflight  # noqa: E402
+    test_preflight.main()
