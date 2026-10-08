@@ -15,6 +15,8 @@ real drift accurately.
 import importlib.util
 import json
 import shutil
+import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -141,6 +143,23 @@ def test_generated_test_py_catches_bad_frontmatter():
         except Exception:
             rejected = True
         assert rejected, "generated test.py must reject invalid YAML frontmatter"
+
+
+def test_scaffolded_main_runs_from_empty_cwd_without_logs_dir():
+    # EDS-16: the generated logging bootstrap used to open logs/<skill>.log at
+    # import, so a scaffolded main.py crashed with FileNotFoundError anywhere
+    # a logs/ folder did not already exist (fresh checkout, CI, other cwd).
+    with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as empty_cwd:
+        skill_dir, _ = main.scaffold(_base_meta(name="cwd-probe"), Path(tmp))
+        assert list(Path(empty_cwd).iterdir()) == []
+        result = subprocess.run(
+            [sys.executable, str(skill_dir / "main.py")],
+            cwd=empty_cwd, capture_output=True, text=True,
+        )
+        assert "FileNotFoundError" not in result.stderr, result.stderr
+        # The only acceptable failure for an untouched scaffold is its own stub.
+        assert result.returncode != 0 and "NotImplementedError" in result.stderr, result.stderr
+        assert (Path(empty_cwd) / "logs" / "cwd-probe.log").exists()
 
 
 def test_scaffolds_instruction_only_skill_with_no_logic_file():
@@ -359,6 +378,7 @@ if __name__ == "__main__":
     test_description_with_quotes_hash_backslash_newline_round_trips()
     test_audit_flags_unparseable_frontmatter()
     test_generated_test_py_catches_bad_frontmatter()
+    test_scaffolded_main_runs_from_empty_cwd_without_logs_dir()
     test_scaffolds_instruction_only_skill_with_no_logic_file()
     test_missing_logging_bootstrap_blocks_scaffolding_by_default()
     test_missing_logging_bootstrap_override_produces_todo_stub()

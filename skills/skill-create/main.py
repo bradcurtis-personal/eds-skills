@@ -122,6 +122,8 @@ class JsonFormatter(logging.Formatter):
         }})
 
 
+if LOG_BACKEND != "cloudwatch":
+    os.makedirs("logs", exist_ok=True)
 handler = logging.StreamHandler() if LOG_BACKEND == "cloudwatch" else logging.FileHandler("logs/{skill_name}.log")
 handler.setFormatter(JsonFormatter())
 
