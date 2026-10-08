@@ -1,13 +1,13 @@
 {
   "name": "skill-create",
-  "version": "1.3.3",
+  "version": "1.3.4",
   "category": "meta",
   "layer": "Design",
   "rank": 1,
   "description": "Scaffolds a new skill folder that already conforms to SKILL_FRAMEWORK.md, from a declared set of metadata.",
   "inputs": "The required skill.json metadata fields per SKILL_FRAMEWORK.md (name, version, category, layer, rank, description, inputs, outputs, dependencies, stack, runtime-independent, logging), gathered conversationally by Cowork before this skill's logic file runs.",
   "outputs": "A new skill folder under /skills/<name>/ containing skill.json, the correct logic file for the declared stack (or none, for an instruction-only skill), README.md, SECURITY.md, test.py, and SKILL.md -- written to the local filesystem, protocol: direct file output.",
-  "dependencies": ["PyYAML (test/audit-time only, pinned in the repo's requirements.txt; main.py uses a stricter stdlib frontmatter check without it)"],
+  "dependencies": ["PyYAML (test-time, and for SKILL.md frontmatter forms beyond single-line plain/quoted scalars; pinned in the repo's requirements.txt; main.py's --audit parses single-line plain, single-quoted and double-quoted scalars with a stdlib fallback without it)"],
   "stack": [
     "Python"
   ],
