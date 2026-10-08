@@ -150,7 +150,8 @@ handler.setFormatter(JsonFormatter())
 
 logger = logging.getLogger("{skill_name}")
 logger.setLevel(LOG_LEVEL)
-logger.addHandler(handler)
+if not logger.handlers:
+    logger.addHandler(handler)
 
 
 def main():
@@ -574,6 +575,59 @@ def _scaffold_marker_findings(skill_dir, name, meta):
     return findings
 
 
+FILE_HANDLER_LOGS_RE = re.compile(r"""FileHandler\(\s*f?["']logs/""")
+LOGS_DIR_CREATED_RE = re.compile(r"\bmakedirs\(|\.mkdir\(")
+ADD_HANDLER_RE = re.compile(r"\.addHandler\(")
+
+
+def _logging_bootstrap_findings(skill_dir, meta):
+    """Findings for the Python logging bootstrap in main.py (EDS-37).
+
+    Stale: a FileHandler("logs/...") with nothing in the file that creates the
+    logs directory (os.makedirs / Path.mkdir). That is the pre-EDS-16
+    bootstrap, which crashes at import anywhere but a repo root that already
+    has logs/. Any makedirs/mkdir call in the file counts as handling it, so
+    skills with their own workaround (or skill-create's own _ensure_logs_dir)
+    pass.
+
+    Note, not stale: addHandler with no `.handlers` check anywhere in the
+    file, which duplicates log lines when the module is imported or reloaded
+    twice. A note only, so existing skills keep passing the PR gate.
+
+    Only Python skills (logic file main.py) are inspected.
+    """
+    if meta is None or not isinstance(meta.get("stack"), list):
+        return []
+    try:
+        expected = determine_logic_file(meta["stack"])
+    except ScaffoldError:
+        return []
+    if expected != "main.py":
+        return []
+    text = _read_text(skill_dir / expected)
+    if text is None:
+        return []
+
+    findings = []
+    has_file_handler = bool(FILE_HANDLER_LOGS_RE.search(text))
+    if has_file_handler and not LOGS_DIR_CREATED_RE.search(text):
+        findings.append(AuditFinding(
+            "stale",
+            "main.py's logging bootstrap opens FileHandler(\"logs/...\") but never creates the "
+            "logs directory -- it crashes at import outside a folder that already has logs/. "
+            "Add os.makedirs(\"logs\", exist_ok=True) before the handler (see "
+            "SKILL_FRAMEWORK.md's Logging Standard)."))
+    if ADD_HANDLER_RE.search(text) and ".handlers" not in text:
+        findings.append(AuditFinding(
+            "note",
+            "main.py's logging bootstrap calls addHandler without an `if not logger.handlers` "
+            "guard -- importing or reloading it twice in one process duplicates every log line. "
+            "Guard it the way skill-create's current bootstrap does."))
+    if not any(f.status in ("stale", "note") for f in findings) and has_file_handler:
+        findings.append(AuditFinding("ok", "main.py's logging bootstrap creates logs/ and guards addHandler."))
+    return findings
+
+
 def audit(name, skills_dir):
     """Read-only audit of an existing skill against current SKILL_FRAMEWORK.md
     rules. Never writes anything -- update mode is audit + report only per
@@ -731,6 +785,9 @@ def audit(name, skills_dir):
 
     # ---- leftover scaffold placeholders (EDS-17) ----
     findings.extend(_scaffold_marker_findings(skill_dir, name, meta))
+
+    # ---- logging bootstrap content (EDS-37) ----
+    findings.extend(_logging_bootstrap_findings(skill_dir, meta))
 
     return findings
 
