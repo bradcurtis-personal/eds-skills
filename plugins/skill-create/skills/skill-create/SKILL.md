@@ -11,13 +11,15 @@ Scaffolds a new skill folder that already conforms to `SKILL_FRAMEWORK.md`, from
 
 **What create mode produces:** a new folder at `/skills/<name>/` containing `skill.json`, the correct logic file for the declared stack (or none), `README.md`, `SECURITY.md` (minimal "no trust boundary" template by default, flagged with a TODO to fill in the fuller shape if this skill actually crosses one), `SKILL.md`, and a `test.py` stub — a correctly-shaped starting point, not a finished skill.
 
+**Where `main.py` is:** in the same folder as this `SKILL.md`, alongside `README.md` and `SECURITY.md`. That is `skills/skill-create/` in the `eds-skills` repo and also `skills/skill-create/` inside the installed plugin, so `main.py` is `<folder containing this SKILL.md>/main.py` either way. Run it from that folder, or by that path. Whenever it runs from an installed plugin, pass `--output-dir <path to your eds-skills checkout>/skills`: by default `main.py` scaffolds into and audits the `skills/` folder next to itself, which for an installed plugin is the plugin's own directory, not the repo.
+
 Before running `main.py` in create mode, gather the required metadata conversationally: `name`, `version`, `category`, `layer`, `rank`, `description`, `inputs`, `outputs`, `dependencies`, `stack`, `runtime-independent`, `logging`. See `SKILL_FRAMEWORK.md`'s Skill Metadata table for what each field means, and `AUTONOMY_RANKS.md` for how to pick `rank`.
 
 If `main.py` exits with code 2, it's telling you the declared `stack` has no logging bootstrap defined yet. Ask what that stack's logging convention should be (library/module, format, output destination), add it to `main.py`'s `STACK_LOGGING_BOOTSTRAP` and to `SKILL_FRAMEWORK.md`'s Logging Standard in the same change, then retry — don't silently pass `--allow-missing-logging-bootstrap` on the user's behalf; that's their explicit call to defer.
 
 **When to invoke (update mode):** the user wants an existing skill updated, audited, cleaned up, or brought in line with current standards.
 
-**What update mode produces:** a read-only report (`python3 main.py --audit <skill-name>`) listing what's stale, ok, or needs manual review — it never rewrites a file itself. Fix flagged items conversationally, one file at a time, then re-run the audit to confirm.
+**What update mode produces:** a read-only report (`python3 main.py --audit <skill-name>`, plus `--output-dir` as above when run from an installed plugin) listing what's stale, ok, or needs manual review — it never rewrites a file itself. Fix flagged items conversationally, one file at a time, then re-run the audit to confirm.
 
 ## Documentation pass
 
