@@ -363,14 +363,134 @@ def build_readme(meta, logic_filename):
 FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
 
 
+NEEDS_PYYAML = "install PyYAML (python3 -m pip install -r requirements.txt) to parse this form"
+
+# Characters PyYAML's reader accepts. Anything else (control characters) is an
+# error in YAML; \x85,   and   are accepted but are YAML line breaks,
+# which the single-line fallback does not model, so they are excluded too.
+_YAML_SAFE_CHARS_RE = re.compile("^[\t\n -~ -‧‪-퟿-�\U00010000-\U0010ffff]*$")
+
+_PLAIN_FIRST_INDICATORS = set("-?:,[]{}#&*!|>'\"%@`")
+
+# YAML 1.1 implicit resolvers (copied from PyYAML's resolver.py): a plain scalar
+# matching any of these is NOT a string to yaml.safe_load, so the fallback must
+# not return it as one.
+_YAML_NON_STRING_PLAIN_RE = re.compile(
+    r"^(?:"
+    r"yes|Yes|YES|no|No|NO|true|True|TRUE|false|False|FALSE|on|On|ON|off|Off|OFF"
+    r"|[-+]?(?:[0-9][0-9_]*)\.[0-9_]*(?:[eE][-+][0-9]+)?"
+    r"|\.[0-9][0-9_]*(?:[eE][-+][0-9]+)?"
+    r"|[-+]?[0-9][0-9_]*(?::[0-5]?[0-9])+\.[0-9_]*"
+    r"|[-+]?\.(?:inf|Inf|INF)|\.(?:nan|NaN|NAN)"
+    r"|[-+]?0b[0-1_]+|[-+]?0[0-7_]+|[-+]?(?:0|[1-9][0-9_]*)|[-+]?0x[0-9a-fA-F_]+"
+    r"|[-+]?[1-9][0-9_]*(?::[0-5]?[0-9])+"
+    r"|<<|~|null|Null|NULL|="
+    r"|[0-9]{4}-[0-9]{2}-[0-9]{2}"
+    r"|[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}(?:[Tt]|[ \t]+)[0-9]{1,2}:[0-9]{2}:[0-9]{2}"
+    r"(?:\.[0-9]*)?(?:[ \t]*(?:Z|[-+][0-9]{1,2}(?::[0-9]{2})?))?"
+    r")$"
+)
+_FRONTMATTER_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
+_SINGLE_QUOTED_RE = re.compile(r"^'((?:[^']|'')*)'$")
+_SURROGATE_ESCAPE_RE = re.compile(r"\\u[dD][89a-fA-F][0-9a-fA-F]{2}")
+
+
+def _parse_scalar_without_yaml(key, value):
+    """Decode one single-line scalar, or raise ValueError saying why this
+    fallback cannot. Accepts only forms where yaml.safe_load returns the
+    identical str: plain, single-quoted, JSON-style double-quoted."""
+    if not value:
+        raise ValueError(
+            f"{key!r} has an empty value, or a value on following lines "
+            f"(multi-line, nested or null): {NEEDS_PYYAML}")
+    first = value[0]
+    if first == '"':
+        if _SURROGATE_ESCAPE_RE.search(value):
+            raise ValueError(
+                f"{key!r} is a double-quoted scalar with a \\uD800-\\uDFFF surrogate escape, "
+                f"which PyYAML decodes differently from JSON: {NEEDS_PYYAML}")
+        try:
+            decoded = json.loads(value)
+        except json.JSONDecodeError:
+            raise ValueError(
+                f"{key!r} is a double-quoted scalar this fallback cannot decode (it accepts "
+                f"JSON-style escapes only, with nothing after the closing quote, e.g. no trailing "
+                f"comment): {NEEDS_PYYAML}")
+        if not isinstance(decoded, str):
+            raise ValueError(f"{key!r} is not a double-quoted string: {NEEDS_PYYAML}")
+        return decoded
+    if first == "'":
+        quoted = _SINGLE_QUOTED_RE.match(value)
+        if not quoted:
+            raise ValueError(
+                f"{key!r} is a single-quoted scalar this fallback cannot decode (a lone quote must "
+                f"be doubled, and nothing may follow the closing quote): {NEEDS_PYYAML}")
+        return quoted.group(1).replace("''", "'")
+    if first in "|>":
+        raise ValueError(f"{key!r} is a block (literal or folded) scalar: {NEEDS_PYYAML}")
+    if first in "[{":
+        raise ValueError(f"{key!r} is a flow collection (list or mapping): {NEEDS_PYYAML}")
+    if first in "&*!":
+        raise ValueError(f"{key!r} uses a YAML anchor, alias or tag: {NEEDS_PYYAML}")
+    if first in _PLAIN_FIRST_INDICATORS:
+        raise ValueError(
+            f"{key!r} is a plain scalar starting with the YAML indicator {first!r}; quote it, "
+            f"or {NEEDS_PYYAML}")
+    if "\t" in value:
+        raise ValueError(f"{key!r} is a plain scalar containing a tab: {NEEDS_PYYAML}")
+    if ": " in value or value.endswith(":"):
+        raise ValueError(
+            f"{key!r} is a plain scalar containing ': ' (invalid YAML; quote the value)")
+    if " #" in value:
+        raise ValueError(
+            f"{key!r} is a plain scalar containing ' #', which YAML reads as a comment; "
+            f"quote the value, or {NEEDS_PYYAML}")
+    if _YAML_NON_STRING_PLAIN_RE.match(value):
+        raise ValueError(
+            f"{key!r} is a plain scalar YAML reads as a number, boolean, null or date, not a "
+            f"string; quote it, or {NEEDS_PYYAML}")
+    return value
+
+
+def _parse_frontmatter_without_yaml(block):
+    """Stdlib fallback (EDS-39): a mapping of `key: <single-line scalar>` lines,
+    a strict subset of YAML (see _parse_scalar_without_yaml). Whatever it
+    returns, yaml.safe_load returns too; anything it cannot prove that for
+    raises ValueError naming PyYAML as the way to parse it."""
+    block = block.replace("\r\n", "\n")
+    if not _YAML_SAFE_CHARS_RE.match(block):
+        raise ValueError(
+            f"frontmatter contains a control character or a YAML line-break character: {NEEDS_PYYAML}")
+    data = {}
+    for line in block.split("\n"):
+        if not line.strip(" "):
+            continue
+        if line[0] in " \t":
+            raise ValueError(
+                f"indented frontmatter line {line!r} (continuation or nested value): {NEEDS_PYYAML}")
+        if line[0] == "#":
+            continue
+        key, sep, value = line.partition(":")
+        if not sep or not _FRONTMATTER_KEY_RE.match(key) or (value and value[0] != " "):
+            raise ValueError(f"unparseable frontmatter line: {line!r}")
+        data[key] = _parse_scalar_without_yaml(key, value.strip(" "))
+    if not data:
+        raise ValueError("frontmatter is not a YAML mapping")
+    return data
+
+
 def parse_frontmatter(text):
     """Parse SKILL.md frontmatter into a dict. Returns None if there is no
-    frontmatter block. Raises ValueError if the block is not valid YAML.
+    frontmatter block. Raises ValueError if the block is not valid YAML, or (no
+    PyYAML) is in a form the stdlib fallback does not parse.
 
     Uses yaml.safe_load when PyYAML is importable. Otherwise falls back to a
-    strict stdlib check of the shape build_skill_md() writes: a plain `name:`
-    line and a `description:` line holding a JSON-style double-quoted scalar
-    (valid YAML), decoded with json.loads.
+    stdlib parser (EDS-39) of single-line `key: value` lines whose value is a
+    plain, single-quoted or JSON-style double-quoted scalar -- the shapes real
+    SKILL.md files use, and a strict subset of YAML: it never accepts a value
+    that yaml.safe_load would read differently. Block/folded scalars, anchors,
+    flow collections, multi-line values and the like are rejected with a
+    message saying PyYAML is needed.
     """
     match = FRONTMATTER_RE.match(text)
     if not match:
@@ -388,20 +508,7 @@ def parse_frontmatter(text):
         if not isinstance(data, dict):
             raise ValueError("frontmatter is not a YAML mapping")
         return data
-    data = {}
-    for line in block.split("\n"):
-        key, sep, value = line.partition(": ")
-        if not sep:
-            raise ValueError(f"unparseable frontmatter line: {line!r}")
-        value = value.strip()
-        if key == "description":
-            try:
-                data[key] = json.loads(value)
-            except json.JSONDecodeError:
-                raise ValueError("description must be a double-quoted scalar")
-        else:
-            data[key] = value
-    return data
+    return _parse_frontmatter_without_yaml(block)
 
 
 def build_skill_md(meta):
