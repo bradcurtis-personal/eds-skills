@@ -28,3 +28,6 @@ jobs:
 
       - name: Check version bump and run contract tests
         run: python3 tooling/package_skill.py check --base ${{ github.base_ref }}
+
+      - name: Run tooling tests
+        run: python3 tooling/test_package_skill.py
