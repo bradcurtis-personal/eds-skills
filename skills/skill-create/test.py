@@ -779,38 +779,125 @@ def test_audit_passes_for_every_skill_in_the_library_without_pyyaml():
         assert "0 stale" in audit.stdout, audit.stdout
 
 
-if __name__ == "__main__":
-    test_fallback_frontmatter_accepts_plain_single_and_double_quoted_scalars()
-    test_fallback_frontmatter_rejects_other_forms_with_a_clear_message()
-    test_fallback_frontmatter_rejects_non_mapping_and_malformed_lines()
-    test_audit_passes_for_every_skill_in_the_library_without_pyyaml()
-    test_scaffolded_bootstrap_adds_one_handler_when_imported_twice()
-    test_audit_flags_old_bootstrap_without_makedirs_and_passes_fresh_one()
-    test_audit_unguarded_add_handler_is_a_note_not_stale()
-    test_scaffolds_python_craft_skill()
-    test_description_with_colon_space_is_valid_yaml_and_round_trips()
-    test_description_with_quotes_hash_backslash_newline_round_trips()
-    test_audit_flags_unparseable_frontmatter()
-    test_generated_test_py_catches_bad_frontmatter()
-    test_scaffolded_main_runs_from_empty_cwd_without_logs_dir()
-    test_scaffolds_instruction_only_skill_with_no_logic_file()
-    test_missing_logging_bootstrap_blocks_scaffolding_by_default()
-    test_missing_logging_bootstrap_override_produces_todo_stub()
-    test_defined_logging_bootstrap_is_used_without_override()
-    test_unknown_stack_fails_loudly_instead_of_guessing()
-    test_naming_convention_is_enforced()
-    test_does_not_overwrite_existing_skill()
-    test_meta_skill_must_be_design_layer()
-    test_scaffold_always_includes_security_md()
-    test_audit_flags_missing_security_md()
-    test_audit_does_not_flag_present_security_md()
-    test_audit_reports_missing_skill_as_error()
-    test_audit_clean_skill_is_all_ok()
-    test_audit_flags_missing_skill_json_field()
-    test_audit_flags_readme_missing_required_section()
-    test_audit_flags_extra_logic_file_after_stack_change()
-    test_audit_never_writes_anything()
-    test_audit_flags_untouched_scaffold_and_passes_once_filled_in()
-    test_audit_flags_each_marker_individually_and_for_system_skills()
-    test_audit_of_skill_create_itself_has_no_marker_findings()
+# ---------- EDS-42: non-ASCII descriptions and the generated test.py's fallback ----------
+
+def _generated_test_without_yaml(skill_dir):
+    with tempfile.TemporaryDirectory() as cwd:
+        return subprocess.run(
+            [sys.executable, "-c", _NO_YAML_RUNNER, str(skill_dir / "test.py")],
+            capture_output=True, text=True, cwd=cwd, encoding="utf-8",
+        )
+
+
+def _parse_without_yaml(texts):
+    return _fallback_results(texts)
+
+
+NON_ASCII_DESCRIPTIONS = [
+    "Says hello \U0001F600 to naïve café users — déjà vu",   # emoji + accents + em dash
+    "CJK 日本語 and \U0001F9EA\U0001F680 plane-1 characters",
+    "Line separator, next line, NEL\u0085, DEL\x7f, BOM﻿ end",           # chars YAML treats specially
+]
+
+
+def test_generator_writes_non_ascii_descriptions_as_themselves_not_surrogate_pairs():
+    # EDS-42: json.dumps' default ensure_ascii wrote an emoji as a 😀
+    # pair, which PyYAML and json.loads decode differently.
+    yaml = _real_yaml()
+    for i, description in enumerate(NON_ASCII_DESCRIPTIONS):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            skill_dir, _ = main.scaffold(_base_meta(name=f"unicode-skill-{'abc'[i]}", description=description), out)
+            text = (skill_dir / "SKILL.md").read_text(encoding="utf-8")
+            assert not main._SURROGATE_ESCAPE_RE.search(text), text
+            if "\U0001F600" in description:
+                assert "\U0001F600" in text, "emoji should be written as itself"
+            if yaml is not None:
+                assert _frontmatter_description(skill_dir) == description
+            # the stdlib fallback (no PyYAML) must agree
+            (result,) = _parse_without_yaml([text])
+            assert result.get("ok", {}).get("description") == description, result
+            assert main.parse_frontmatter(text)["description"] == description
+            _finish_scaffold(skill_dir)
+            assert not [f for f in main.audit(f"unicode-skill-{'abc'[i]}", out) if f.status == "stale"]
+
+
+def test_generated_test_py_has_the_audits_fallback_without_pyyaml():
+    # EDS-42: the generated test.py used to carry its own double-quoted-only
+    # fallback. It now carries a copy of the audit's, so it accepts the same
+    # shapes and rejects the same ones, without PyYAML.
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp)
+        skill_dir, _ = main.scaffold(_base_meta(name="gen-fallback", description="Generated skill."), out)
+        run = _generated_test_without_yaml(skill_dir)
+        assert run.returncode == 0, run.stdout + run.stderr
+
+        for raw in ["Plain description for gen-fallback.", "'Single: quoted # one'", '"Double \\"quoted\\" one"',
+                    json.dumps(NON_ASCII_DESCRIPTIONS[0], ensure_ascii=False)]:
+            (skill_dir / "SKILL.md").write_text(
+                f"---\nname: gen-fallback\ndescription: {raw}\n---\n\nbody\n", encoding="utf-8")
+            run = _generated_test_without_yaml(skill_dir)
+            assert run.returncode == 0, f"{raw!r}:\n{run.stdout}{run.stderr}"
+
+        for raw, message in [("|\n  block\n  scalar", "PyYAML"), ("has a: colon", "invalid YAML"),
+                             ('"\\ud83d\\ude00"', "surrogate")]:
+            (skill_dir / "SKILL.md").write_text(
+                f"---\nname: gen-fallback\ndescription: {raw}\n---\n\nbody\n", encoding="utf-8")
+            run = _generated_test_without_yaml(skill_dir)
+            assert run.returncode != 0 and message in run.stderr, f"{raw!r}:\n{run.stdout}{run.stderr}"
+
+
+def test_generated_test_py_fallback_is_a_copy_of_mains():
+    # Built from main.py's live objects, so the two cannot drift.
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp)
+        skill_dir, _ = main.scaffold(_base_meta(name="gen-copy"), out)
+        generated = (skill_dir / "test.py").read_text(encoding="utf-8")
+        import inspect
+        for fn in (main._parse_scalar_without_yaml, main._parse_frontmatter_without_yaml):
+            assert inspect.getsource(fn).rstrip("\n") in generated, fn.__name__
+        for name in ("_YAML_SAFE_CHARS_RE", "_YAML_NON_STRING_PLAIN_RE", "_FRONTMATTER_KEY_RE",
+                     "_SINGLE_QUOTED_RE", "_SURROGATE_ESCAPE_RE"):
+            assert getattr(main, name).pattern == _compiled_pattern(generated, name), name
+
+
+def _compiled_pattern(source, name):
+    namespace = {"re": __import__("re")}
+    line = next(l for l in source.splitlines() if l.startswith(f"{name} = "))
+    exec(line, namespace)
+    return namespace[name].pattern
+
+
+def test_audit_reads_and_scaffold_writes_utf8_regardless_of_locale():
+    # EDS-42: Path.read_text() with no encoding uses the locale's default
+    # (cp1252 on Windows), which mangles or rejects teach-user's em dash.
+    # Audit a skill whose files hold non-ASCII text, with UTF-8 mode off and a
+    # C locale, and require a clean run.
+    import os
+    description = NON_ASCII_DESCRIPTIONS[0]
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp)
+        skill_dir, _ = main.scaffold(_base_meta(name="locale-skill", description=description), out)
+        _finish_scaffold(skill_dir)
+        readme = skill_dir / "README.md"
+        readme.write_text(readme.read_text(encoding="utf-8") + "\nNon-ASCII — é \U0001F600\n", encoding="utf-8")
+        env = dict(os.environ, PYTHONUTF8="0", PYTHONCOERCECLOCALE="0", LC_ALL="C", LANG="C")
+        run = subprocess.run(
+            [sys.executable, str(MAIN_PATH), "--audit", "locale-skill", "--output-dir", str(out)],
+            capture_output=True, text=True, encoding="utf-8", env=env, cwd=tmp,
+        )
+        assert run.returncode == 0, run.stdout + run.stderr
+
+
+def _run_all():
+    # Run every test_ function in file order, so a new test cannot be written
+    # and then left out of a hand-kept list (the EDS-41 tests were).
+    tests = sorted((f.__code__.co_firstlineno, n, f) for n, f in globals().items()
+                   if n.startswith("test_") and callable(f))
+    for _, _, fn in tests:
+        fn()
     print("All skill-create contract tests passed.")
+
+
+if __name__ == "__main__":
+    _run_all()
