@@ -203,7 +203,84 @@ def test_check_passes_a_finished_skill():
         assert "0 stale" in out, f"expected the audit to run and report 0 stale:\n{out}"
 
 
+def _pr(number, ref, repo="o/r"):
+    return {"number": number, "head": {"ref": ref, "repo": {"full_name": repo}}}
+
+
+def run_open_marketplace_pr(open_prs, new_number=30, fail=()):
+    """Drive open_marketplace_pr() with git and the GitHub API stubbed.
+    Returns the list of (method, path, data) API calls it made. `fail` is a
+    set of (method, path-substring) pairs that return HTTP 500."""
+    calls = []
+
+    def fake_api(method, path, token, data=None):
+        calls.append((method, path, data))
+        if any(m == method and s in path for m, s in fail):
+            return 500, {}
+        if method == "POST" and path == "/repos/o/r/pulls":
+            return 201, {"number": new_number, "html_url": "http://x/pr"}
+        if method == "GET":
+            return 200, open_prs
+        return (204 if method == "DELETE" else 200), {}
+
+    class R:
+        stdout = " M plugins/x\n"
+
+    saved = (ps.github_api, ps.run)
+    ps.github_api = fake_api
+    ps.run = lambda cmd, **kw: R()
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            ps.open_marketplace_pr("o/r", "tok")
+    finally:
+        ps.github_api, ps.run = saved
+    return calls
+
+
+def test_new_sync_pr_closes_only_older_bot_sync_prs():
+    prs = [
+        _pr(30, "bot/sync-marketplace-new"),                      # the new PR itself
+        _pr(25, "bot/sync-marketplace-aaa1111"),                  # older sync: close
+        _pr(27, "bot/sync-marketplace-bbb2222"),                  # older sync: close
+        _pr(28, "feature/EDS-1-thing"),                           # human PR: keep
+        _pr(26, "bot/other-thing"),                               # other bot branch: keep
+        _pr(29, "bot/sync-marketplace-fork", repo="evil/r"),      # fork: keep
+        _pr(31, "bot/sync-marketplace-newer"),                    # newer than ours: keep
+    ]
+    calls = run_open_marketplace_pr(prs)
+    closed = [p for m, p, d in calls if m == "PATCH"]
+    deleted = [p for m, p, d in calls if m == "DELETE"]
+    commented = [(p, d) for m, p, d in calls if m == "POST" and p.endswith("/comments")]
+    assert closed == ["/repos/o/r/pulls/25", "/repos/o/r/pulls/27"], closed
+    assert deleted == [
+        "/repos/o/r/git/refs/heads/bot/sync-marketplace-aaa1111",
+        "/repos/o/r/git/refs/heads/bot/sync-marketplace-bbb2222",
+    ], deleted
+    assert [p for p, _ in commented] == [
+        "/repos/o/r/issues/25/comments", "/repos/o/r/issues/27/comments"], commented
+    assert all("#30" in d["body"] for _, d in commented), commented
+    # the close must come after the new PR exists
+    order = [(m, p) for m, p, d in calls]
+    assert order.index(("POST", "/repos/o/r/pulls")) < order.index(("PATCH", "/repos/o/r/pulls/25"))
+
+
+def test_close_failure_does_not_fail_release_or_delete_branch():
+    prs = [_pr(25, "bot/sync-marketplace-aaa1111")]
+    calls = run_open_marketplace_pr(prs, fail={("PATCH", "/pulls/25")})
+    assert not [c for c in calls if c[0] == "DELETE"], "must keep the branch if close failed"
+
+
+def test_sync_pr_body_no_longer_claims_only_skill_json_and_skill_md():
+    calls = run_open_marketplace_pr([])
+    body = next(d["body"] for m, p, d in calls if m == "POST" and p == "/repos/o/r/pulls")
+    assert "fully derived from skills/*/skill.json" not in body, body
+    assert "README.md" in body and "closed automatically" in body, body
+
+
 if __name__ == "__main__":
+    test_new_sync_pr_closes_only_older_bot_sync_prs()
+    test_close_failure_does_not_fail_release_or_delete_branch()
+    test_sync_pr_body_no_longer_claims_only_skill_json_and_skill_md()
     test_check_fails_an_untouched_scaffold()
     test_check_passes_a_finished_skill()
     test_plugin_zip_contains_skill_logic_and_docs()
