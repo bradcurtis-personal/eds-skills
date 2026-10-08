@@ -33,6 +33,7 @@ whenever a new stack needs to be scaffolded, rather than guessing a
 filename inline.
 """
 import argparse
+import inspect
 import json
 import logging
 import os
@@ -511,10 +512,28 @@ def parse_frontmatter(text):
     return _parse_frontmatter_without_yaml(block)
 
 
+# Characters that cannot appear raw in a YAML stream (control characters, the
+# non-characters U+FFFE/U+FFFF) or that YAML treats as line breaks (U+0085,
+# U+2028, U+2029), plus the BOM. They are written as \uXXXX escapes, which JSON
+# and YAML decode to the same character.
+_YAML_UNSAFE_RAW_CHAR_RE = re.compile("[\x7f-\x9f  ﻿￾￿]")
+
+
+def yaml_double_quoted(text):
+    """Return `text` as a JSON-style double-quoted scalar that is also a valid
+    YAML double-quoted scalar, with non-ASCII characters written as themselves
+    (EDS-42). json.dumps' default ensure_ascii=True wrote a character outside
+    the Basic Multilingual Plane, such as an emoji, as a \\uD83D\\uDE00
+    surrogate pair, which PyYAML decodes to two lone surrogates while json.loads
+    decodes it to one character. The file is UTF-8, so no escape is needed."""
+    quoted = json.dumps(text, ensure_ascii=False)
+    return _YAML_UNSAFE_RAW_CHAR_RE.sub(lambda m: "\\u%04x" % ord(m.group()), quoted)
+
+
 def build_skill_md(meta):
-    # json.dumps output is a valid YAML double-quoted scalar, so ": ", "#",
-    # quotes, backslashes and newlines in the description are all safe.
-    description = json.dumps(meta["description"])
+    # yaml_double_quoted output is a valid YAML double-quoted scalar, so ": ",
+    # "#", quotes, backslashes and newlines in the description are all safe.
+    description = yaml_double_quoted(meta["description"])
     frontmatter = f"---\nname: {meta['name']}\ndescription: {description}\n---\n"
     if meta["category"] == "system":
         body = (
@@ -535,6 +554,22 @@ def build_skill_md(meta):
     return frontmatter + body
 
 
+def frontmatter_fallback_source():
+    """Source text of the stdlib frontmatter fallback, for the generated
+    test.py (EDS-42). Built from the live objects, so the generated test accepts
+    exactly the shapes `--audit` accepts without PyYAML and cannot drift from
+    them. A generated skill is standalone, so it carries a copy rather than
+    importing skill-create."""
+    regexes = ["_YAML_SAFE_CHARS_RE", "_YAML_NON_STRING_PLAIN_RE", "_FRONTMATTER_KEY_RE",
+               "_SINGLE_QUOTED_RE", "_SURROGATE_ESCAPE_RE"]
+    lines = [f"NEEDS_PYYAML = {NEEDS_PYYAML!r}",
+             f"_PLAIN_FIRST_INDICATORS = set({''.join(sorted(_PLAIN_FIRST_INDICATORS))!r})"]
+    lines += [f"{name} = re.compile({globals()[name].pattern!r})" for name in regexes]
+    return "\n".join(lines) + "\n\n\n" + "\n\n\n".join(
+        inspect.getsource(fn).rstrip("\n")
+        for fn in (_parse_scalar_without_yaml, _parse_frontmatter_without_yaml))
+
+
 def build_test_py(meta, logic_filename):
     lines = [
         '"""',
@@ -551,7 +586,7 @@ def build_test_py(meta, logic_filename):
         "",
         "try:",
         "    import yaml",
-        "except ImportError:  # fall back to a strict stdlib check below",
+        "except ImportError:  # fall back to the stdlib parser below",
         "    yaml = None",
         "",
         'SKILL_DIR = Path(__file__).parent',
@@ -563,22 +598,24 @@ def build_test_py(meta, logic_filename):
     lines.append("")
     lines.append("")
     lines.append("def test_skill_json_valid_and_complete():")
-    lines.append('    data = json.loads((SKILL_DIR / "skill.json").read_text())')
+    lines.append('    data = json.loads((SKILL_DIR / "skill.json").read_text(encoding="utf-8"))')
     lines.append("    for field in REQUIRED_METADATA_FIELDS:")
     lines.append('        assert field in data, f"skill.json missing required field: {field}"')
     lines.append(f'    assert data["name"] == "{meta["name"]}"')
     lines.append(f'    assert data["category"] == "{meta["category"]}"')
     lines.append("")
     lines.append("")
+    lines.append("# The stdlib frontmatter parser below is copied from skill-create's main.py, so")
+    lines.append("# without PyYAML this test accepts the same shapes `--audit` does: single-line")
+    lines.append("# plain, single-quoted or double-quoted values. It is a strict subset of YAML;")
+    lines.append("# any other form needs PyYAML (see requirements.txt).")
+    lines.append(frontmatter_fallback_source())
+    lines.append("")
+    lines.append("")
     lines.append("def _parse_frontmatter(block):")
     lines.append("    if yaml is not None:")
     lines.append("        return yaml.safe_load(block)")
-    lines.append("    data = {}")
-    lines.append('    for line in block.split("\\n"):')
-    lines.append('        key, sep, value = line.partition(": ")')
-    lines.append('        assert sep, f"unparseable frontmatter line: {line!r}"')
-    lines.append('        data[key] = json.loads(value) if key == "description" else value.strip()')
-    lines.append("    return data")
+    lines.append("    return _parse_frontmatter_without_yaml(block)")
     lines.append("")
     lines.append("")
     lines.append("def test_skill_md_has_valid_frontmatter():")
@@ -807,7 +844,7 @@ def audit(name, skills_dir):
         findings.append(AuditFinding("stale", "skill.json is missing entirely."))
     else:
         try:
-            meta = json.loads(skill_json_path.read_text())
+            meta = json.loads(skill_json_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError as e:
             findings.append(AuditFinding("stale", f"skill.json is not valid JSON: {e}"))
 
@@ -858,7 +895,7 @@ def audit(name, skills_dir):
                 # non-Python stub still carrying the TODO after a real bootstrap
                 # may since have been defined for this stack (ties to task #12).
                 if expected_logic_file != "main.py" and (skill_dir / expected_logic_file).exists():
-                    text = (skill_dir / expected_logic_file).read_text()
+                    text = (skill_dir / expected_logic_file).read_text(encoding="utf-8")
                     if "TODO: logging bootstrap not yet defined" in text:
                         findings.append(AuditFinding(
                             "note",
@@ -872,7 +909,7 @@ def audit(name, skills_dir):
     if not skill_md_path.exists():
         findings.append(AuditFinding("stale", "SKILL.md is missing entirely -- required for every Cowork skill."))
     else:
-        text = skill_md_path.read_text()
+        text = skill_md_path.read_text(encoding="utf-8")
         try:
             fm = parse_frontmatter(text)
         except ValueError as e:
@@ -924,7 +961,7 @@ def audit(name, skills_dir):
     if not (skill_dir / "README.md").exists():
         findings.append(AuditFinding("stale", "README.md is missing."))
     else:
-        readme_text = (skill_dir / "README.md").read_text()
+        readme_text = (skill_dir / "README.md").read_text(encoding="utf-8")
         missing_sections = [s for s in README_REQUIRED_SECTIONS if s not in readme_text]
         if missing_sections:
             findings.append(AuditFinding(
@@ -970,13 +1007,13 @@ def scaffold(meta, output_dir, allow_missing_logging_bootstrap=False):
         raise ScaffoldError(f"{skill_dir} already exists -- skill-create does not overwrite an existing skill.")
     skill_dir.mkdir(parents=True)
 
-    (skill_dir / "skill.json").write_text(skill_json_content)
+    (skill_dir / "skill.json").write_text(skill_json_content, encoding="utf-8")
     if logic_filename:
-        (skill_dir / logic_filename).write_text(logic_content)
-    (skill_dir / "README.md").write_text(readme_content)
-    (skill_dir / "SECURITY.md").write_text(security_md_content)
-    (skill_dir / "SKILL.md").write_text(skill_md_content)
-    (skill_dir / "test.py").write_text(test_py_content)
+        (skill_dir / logic_filename).write_text(logic_content, encoding="utf-8")
+    (skill_dir / "README.md").write_text(readme_content, encoding="utf-8")
+    (skill_dir / "SECURITY.md").write_text(security_md_content, encoding="utf-8")
+    (skill_dir / "SKILL.md").write_text(skill_md_content, encoding="utf-8")
+    (skill_dir / "test.py").write_text(test_py_content, encoding="utf-8")
 
     logger.info(f"scaffolded {meta['name']} at {skill_dir}")
     return skill_dir, logic_filename
@@ -1037,7 +1074,7 @@ def main():
     if args.metadata:
         meta = json.loads(args.metadata)
     else:
-        meta = json.loads(Path(args.metadata_file).read_text())
+        meta = json.loads(Path(args.metadata_file).read_text(encoding="utf-8"))
 
     try:
         skill_dir, logic_filename = scaffold(
