@@ -47,6 +47,92 @@ def _base_meta(**overrides):
     return meta
 
 
+def _finish_scaffold(skill_dir):
+    """Replace every placeholder the scaffold wrote, as a human finishing the
+    skill would. Uses main's marker constants rather than literals so this
+    file never itself contains the scaffold wording."""
+    name = skill_dir.name
+
+    def rewrite(filename, fn):
+        path = skill_dir / filename
+        if path.exists():
+            path.write_text(fn(path.read_text(encoding="utf-8")), encoding="utf-8")
+
+    rewrite("README.md", lambda t: t.replace(main.README_INVOKE_MARKER, "Run it from Cowork."))
+    def skill_md(t):
+        t = t.replace(main.SKILL_MD_INVOKE_MARKER, "**When to invoke:** when asked to make widgets.")
+        for m in main.SKILL_MD_SYSTEM_MARKERS:
+            t = t.replace(m, "Real instructions.")
+        return t
+    rewrite("SKILL.md", skill_md)
+    rewrite("SECURITY.md", lambda t: "".join(
+        line for line in t.splitlines(keepends=True) if not line.startswith(main.SECURITY_MD_MARKER)))
+    rewrite("test.py", lambda t: t.replace(main.TEST_PY_MARKER, "real assertions"))
+    for logic in main.STACK_LOGIC_FILE.values():
+        def logic_fix(t):
+            t = t.replace(main.LOGIC_NOT_IMPLEMENTED_TEMPLATE.format(skill_name=name), "implemented")
+            return t.replace(main.LOGIC_TODO_IMPLEMENT_TEMPLATE.format(skill_name=name), "Implemented.")
+        rewrite(logic, logic_fix)
+
+
+def test_audit_flags_untouched_scaffold_and_passes_once_filled_in():
+    # EDS-17: an untouched scaffold used to audit clean (0 stale), so nothing
+    # in the PR gate could tell it from a finished skill. Drives the real CLI.
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp)
+        skill_dir, _ = main.scaffold(_base_meta(name="raw-scaffold"), out)
+
+        def run_audit():
+            return subprocess.run(
+                [sys.executable, str(MAIN_PATH), "--audit", "raw-scaffold", "--output-dir", str(out)],
+                capture_output=True, text=True, cwd=tmp,
+            )
+
+        raw = run_audit()
+        assert raw.returncode != 0, raw.stdout + raw.stderr
+        for expected in (
+            "README.md still contains the scaffold placeholder",
+            "SKILL.md still contains the scaffold placeholder",
+            "SECURITY.md still contains the scaffold placeholder",
+            "test.py still contains the scaffold placeholder",
+            "main.py still raises the scaffold NotImplementedError",
+            "main.py still contains the scaffold placeholder",
+        ):
+            assert expected in raw.stdout, f"missing finding {expected!r}:\n{raw.stdout}"
+
+        _finish_scaffold(skill_dir)
+        done = run_audit()
+        assert done.returncode == 0, done.stdout + done.stderr
+        assert "0 stale" in done.stdout, done.stdout
+
+
+def test_audit_flags_each_marker_individually_and_for_system_skills():
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp)
+        main.scaffold(_base_meta(name="sys-scaffold", category="system", layer=None,
+                                 stack=["Cowork Skill (SKILL.md)"]), out)
+        stale = [f.message for f in main.audit("sys-scaffold", out) if f.status == "stale"]
+        assert sum("SKILL.md still contains" in m for m in stale) == 2, stale
+        _finish_scaffold(out / "sys-scaffold")
+        assert not [f for f in main.audit("sys-scaffold", out) if f.status == "stale"]
+
+        # a single leftover marker is enough to fail
+        main.scaffold(_base_meta(name="one-marker"), out)
+        _finish_scaffold(out / "one-marker")
+        readme = out / "one-marker" / "README.md"
+        readme.write_text(readme.read_text(encoding="utf-8") + "\n" + main.README_INVOKE_MARKER + "\n",
+                          encoding="utf-8")
+        stale = [f.message for f in main.audit("one-marker", out) if f.status == "stale"]
+        assert len(stale) == 1 and "README.md" in stale[0], stale
+
+
+def test_audit_of_skill_create_itself_has_no_marker_findings():
+    # skill-create's own main.py/test.py legitimately hold the marker text as
+    # template source; auditing skill-create must not mis-flag it.
+    findings = main.audit("skill-create", SKILL_DIR.parent)
+    assert not [f for f in findings if f.status == "stale"], findings
+
+
 def test_scaffolds_python_craft_skill():
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp)
@@ -103,6 +189,7 @@ def test_description_with_colon_space_is_valid_yaml_and_round_trips():
         out = Path(tmp)
         skill_dir, _ = main.scaffold(_base_meta(name="colon-skill", description=description), out)
         assert _frontmatter_description(skill_dir) == description
+        _finish_scaffold(skill_dir)
         findings = main.audit("colon-skill", out)
         assert not any(f.status == "stale" for f in findings), findings
 
@@ -283,7 +370,8 @@ def test_audit_flags_missing_security_md():
 def test_audit_does_not_flag_present_security_md():
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp)
-        main.scaffold(_base_meta(name="has-security-doc"), out)
+        skill_dir, _ = main.scaffold(_base_meta(name="has-security-doc"), out)
+        _finish_scaffold(skill_dir)
 
         findings = main.audit("has-security-doc", out)
         stale = [f for f in findings if f.status == "stale"]
@@ -304,11 +392,12 @@ def test_audit_reports_missing_skill_as_error():
 def test_audit_clean_skill_is_all_ok():
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp)
-        main.scaffold(_base_meta(name="clean-skill"), out)
+        skill_dir, _ = main.scaffold(_base_meta(name="clean-skill"), out)
+        _finish_scaffold(skill_dir)
         findings = main.audit("clean-skill", out)
         assert findings, "expected at least one finding"
         assert not any(f.status == "stale" for f in findings), \
-            f"freshly-scaffolded skill should have no stale findings: {findings}"
+            f"scaffolded-then-finished skill should have no stale findings: {findings}"
 
 
 def test_audit_flags_missing_skill_json_field():
@@ -396,4 +485,7 @@ if __name__ == "__main__":
     test_audit_flags_readme_missing_required_section()
     test_audit_flags_extra_logic_file_after_stack_change()
     test_audit_never_writes_anything()
+    test_audit_flags_untouched_scaffold_and_passes_once_filled_in()
+    test_audit_flags_each_marker_individually_and_for_system_skills()
+    test_audit_of_skill_create_itself_has_no_marker_findings()
     print("All skill-create contract tests passed.")
