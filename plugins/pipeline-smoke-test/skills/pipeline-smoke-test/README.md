@@ -35,4 +35,5 @@ One line on stdout, protocol: direct text output, schema: 'Hello from pipeline-s
 
 ## Version history
 
+- **1.0.1** (EDS-33) — Re-released so the `.plugin` ships `main.py`, `README.md` and `SECURITY.md` alongside `SKILL.md`. Corrected the `SKILL.md` sentence that said an installed plugin ships only that file, and aligned `main.py`'s logging bootstrap with skill-create's current output (handler guard, `logs/` created only for the flat-file backend). No change to the greeting.
 - **1.0.0** (EDS-12) — Initial build, as the fixture for the end-to-end pipeline test run.

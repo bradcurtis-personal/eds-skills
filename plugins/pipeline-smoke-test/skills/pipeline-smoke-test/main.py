@@ -17,14 +17,15 @@ class JsonFormatter(logging.Formatter):
         })
 
 
-# logs/ is gitignored, so it doesn't exist in a fresh checkout (e.g. CI).
-os.makedirs("logs", exist_ok=True)
+if LOG_BACKEND != "cloudwatch":
+    os.makedirs("logs", exist_ok=True)
 handler = logging.StreamHandler() if LOG_BACKEND == "cloudwatch" else logging.FileHandler("logs/pipeline-smoke-test.log")
 handler.setFormatter(JsonFormatter())
 
 logger = logging.getLogger("pipeline-smoke-test")
 logger.setLevel(LOG_LEVEL)
-logger.addHandler(handler)
+if not logger.handlers:
+    logger.addHandler(handler)
 
 
 def greeting(now=None):
