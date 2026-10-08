@@ -26,6 +26,7 @@ Usage:
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 import urllib.request
@@ -153,6 +154,55 @@ def release_exists(repo, tag, token):
     return status == 200
 
 
+# Logic file per declared stack. Mirrors STACK_LOGIC_FILE in
+# skills/skill-create/main.py (SKILL_FRAMEWORK.md, "Logic file naming by
+# stack"); tooling/test_package_skill.py fails if the two tables drift apart.
+STACK_LOGIC_FILE = {
+    "Python": "main.py",
+    "Node.js": "main.js",
+    "Arduino C++": "sketch.ino",
+}
+INSTRUCTION_ONLY_STACK = "Cowork Skill (SKILL.md)"
+# Files shipped next to SKILL.md besides the logic file. SKILL.md points at
+# README.md ("See README.md for full detail"); SECURITY.md documents the
+# skill's trust boundary.
+DOC_FILES = ("README.md", "SECURITY.md")
+
+
+def logic_file_for(name, skill_json):
+    """Logic file name for the skill's declared stack, or None for an
+    instruction-only skill. Exits on a stack this table does not know, so a
+    skill is never released silently without its logic."""
+    stack = skill_json.get("stack", [])
+    if stack == [INSTRUCTION_ONLY_STACK]:
+        return None
+    for known_stack, filename in STACK_LOGIC_FILE.items():
+        if known_stack in stack:
+            return filename
+    sys.exit(
+        f"{name}: unknown stack {stack}. Add it to STACK_LOGIC_FILE in "
+        f"tooling/package_skill.py (and skill-create's main.py) so its logic "
+        f"file gets packaged."
+    )
+
+
+def plugin_skill_files(name):
+    """(source path, path relative to skills/<name>/) for every file of the
+    skill that ships inside its plugin: SKILL.md, the logic file for the
+    declared stack, README.md and SECURITY.md. Single source of truth for
+    both the .plugin zip and plugins/<name>/."""
+    skill_dir = SKILLS_DIR / name
+    skill_json = json.loads((skill_dir / "skill.json").read_text())
+    names = ["SKILL.md"]
+    logic_file = logic_file_for(name, skill_json)
+    if logic_file is not None:
+        if not (skill_dir / logic_file).exists():
+            sys.exit(f"{name}: declared stack needs '{logic_file}' but it is missing.")
+        names.append(logic_file)
+    names.extend(f for f in DOC_FILES if (skill_dir / f).exists())
+    return [(skill_dir / n, n) for n in names]
+
+
 def build_plugin_zip(name, version, out_dir):
     skill_json = json.loads((SKILLS_DIR / name / "skill.json").read_text())
     plugin_manifest = {
@@ -164,7 +214,8 @@ def build_plugin_zip(name, version, out_dir):
     zip_path = out_dir / f"{name}-v{version}.plugin"
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr(".claude-plugin/plugin.json", json.dumps(plugin_manifest, indent=2))
-        zf.write(SKILLS_DIR / name / "SKILL.md", f"skills/{name}/SKILL.md")
+        for src, rel in plugin_skill_files(name):
+            zf.write(src, f"skills/{name}/{rel}")
     return zip_path
 
 
@@ -215,8 +266,8 @@ def regenerate_marketplace():
         (plugin_dir / ".claude-plugin" / "plugin.json").write_text(
             json.dumps(plugin_manifest, indent=2) + "\n"
         )
-        skill_md_src = SKILLS_DIR / name / "SKILL.md"
-        (plugin_dir / "skills" / name / "SKILL.md").write_text(skill_md_src.read_text())
+        for src, rel in plugin_skill_files(name):
+            shutil.copyfile(src, plugin_dir / "skills" / name / rel)
 
         plugins_entries.append(
             {
