@@ -104,6 +104,27 @@ STACK_LOGIC_FILE = {
 }
 INSTRUCTION_ONLY_STACK = "Cowork Skill (SKILL.md)"
 
+# ---------- scaffold placeholder markers (EDS-17) ----------
+#
+# Text the scaffold writes that a finished skill must no longer contain.
+# build_* below and the audit's leftover-marker check both read these, so the
+# two cannot drift apart. The audit only scans the *audited* skill's own
+# generated files, so these strings appearing here (skill-create's template
+# source) never flag skill-create itself.
+
+README_INVOKE_MARKER = "TODO: describe how this skill is invoked."
+SKILL_MD_INVOKE_MARKER = "**When to invoke:** TODO -- short trigger description."
+SKILL_MD_SYSTEM_MARKERS = [
+    "TODO: describe the trigger phrasing for this system skill",
+    "TODO: this is a system skill -- SKILL.md's body IS its logic.",
+]
+SECURITY_MD_MARKER = "TODO: if this skill actually crosses a trust boundary"
+TEST_PY_MARKER = "scaffold-level only -- add real assertions"
+# Logic file: the scaffold's NotImplementedError and its "TODO: implement" line
+# (Python docstring / non-Python stub comment). {skill_name} is substituted.
+LOGIC_NOT_IMPLEMENTED_TEMPLATE = "{skill_name}: main.py is a scaffold -- fill in the real logic."
+LOGIC_TODO_IMPLEMENT_TEMPLATE = "TODO: implement {skill_name}'s actual logic."
+
 PYTHON_LOGGING_BOOTSTRAP = '''import logging
 import json
 import os
@@ -266,7 +287,7 @@ def build_security_md(meta):
         "**Trust boundary:** None -- this skill reads its declared inputs and writes only its "
         "own generated output files. It does not mutate shared config, execute arbitrary code, "
         "open network ports, or cross any other trust boundary.\n\n"
-        "TODO: if this skill actually crosses a trust boundary (shared-config mutation, "
+        f"{SECURITY_MD_MARKER} (shared-config mutation, "
         "critical-path execution, network ports, shell execution, handling another tool's data), "
         "replace the line above and fill in the fuller shape from SKILL_FRAMEWORK.md's "
         "`SECURITY.md` section: What this skill touches / Why that's safe / Out of scope.\n"
@@ -305,7 +326,7 @@ def build_readme(meta, logic_filename):
     lines.append("")
     lines.append("## How to invoke it")
     lines.append("")
-    lines.append("TODO: describe how this skill is invoked.")
+    lines.append(README_INVOKE_MARKER)
     lines.append("")
     lines.append("## What it produces")
     lines.append("")
@@ -399,7 +420,7 @@ def build_skill_md(meta):
         body = (
             f"\n# {meta['name']}\n\n"
             f"{meta['description']}\n\n"
-            f"**When to invoke:** TODO -- short trigger description.\n\n"
+            f"{SKILL_MD_INVOKE_MARKER}\n\n"
             f"**What it produces:** {meta['outputs']}\n\n"
             f"See `README.md` for full detail on how this skill works and what it depends on.\n"
         )
@@ -471,7 +492,7 @@ def build_test_py(meta, logic_filename):
     lines.append("    test_skill_md_has_valid_frontmatter()")
     if logic_filename:
         lines.append("    test_logic_file_exists()")
-    lines.append(f'    print("All {meta["name"]} contract tests passed (scaffold-level only -- add real assertions).")')
+    lines.append(f'    print("All {meta["name"]} contract tests passed ({TEST_PY_MARKER}).")')
     lines.append("")
     return "\n".join(lines)
 
@@ -490,6 +511,67 @@ class AuditFinding:
 
     def __repr__(self):
         return f"[{self.status}] {self.message}"
+
+
+def _read_text(path):
+    return path.read_text(encoding="utf-8", errors="replace") if path.exists() else None
+
+
+def _scaffold_marker_findings(skill_dir, name, meta):
+    """Stale findings for placeholder text skill-create itself generated and
+    nobody replaced (EDS-17). An untouched scaffold passes test.py, so without
+    this the PR gate could not tell it from a finished skill.
+
+    Only the audited skill's own files are read, and only for the exact
+    scaffold wording, so skill-create's template source never flags itself
+    (its main.py holds "{skill_name}" placeholders, not a concrete name).
+    """
+    # (file, marker text, what to do)
+    checks = [
+        ("README.md", README_INVOKE_MARKER, "write the real invocation instructions"),
+        ("SKILL.md", SKILL_MD_INVOKE_MARKER, "write the real trigger description"),
+        ("SECURITY.md", SECURITY_MD_MARKER,
+         "state the skill's real trust boundary and remove the TODO paragraph"),
+        ("test.py", TEST_PY_MARKER, "add real assertions and drop the scaffold-level message"),
+    ]
+    for marker in SKILL_MD_SYSTEM_MARKERS:
+        checks.append(("SKILL.md", marker, "write the real content"))
+
+    logic_files = set(STACK_LOGIC_FILE.values())
+    if meta is not None and isinstance(meta.get("stack"), list):
+        try:
+            expected = determine_logic_file(meta["stack"])
+        except ScaffoldError:
+            expected = None
+        if expected:
+            logic_files = {expected}
+    not_implemented = LOGIC_NOT_IMPLEMENTED_TEMPLATE.format(skill_name=name)
+    todo_implement = LOGIC_TODO_IMPLEMENT_TEMPLATE.format(skill_name=name)
+    not_implemented_re = re.compile(r"NotImplementedError\(\s*[\"']" + re.escape(not_implemented) + r"[\"']\s*\)")
+
+    findings = []
+    for filename, marker, action in checks:
+        text = _read_text(skill_dir / filename)
+        if text is not None and marker in text:
+            findings.append(AuditFinding(
+                "stale", f"{filename} still contains the scaffold placeholder \"{marker}\" -- {action}."))
+    for filename in sorted(logic_files):
+        text = _read_text(skill_dir / filename)
+        if text is None:
+            continue
+        if not_implemented_re.search(text):
+            findings.append(AuditFinding(
+                "stale",
+                f"{filename} still raises the scaffold NotImplementedError "
+                f"(\"{not_implemented}\") -- implement the real logic."))
+        if todo_implement in text:
+            findings.append(AuditFinding(
+                "stale",
+                f"{filename} still contains the scaffold placeholder \"{todo_implement}\" -- "
+                f"implement the real logic and remove it."))
+    if not findings:
+        findings.append(AuditFinding("ok", "no leftover scaffold placeholders."))
+    return findings
 
 
 def audit(name, skills_dir):
@@ -646,6 +728,9 @@ def audit(name, skills_dir):
         findings.append(AuditFinding("stale", "test.py is missing."))
     else:
         findings.append(AuditFinding("ok", "test.py present."))
+
+    # ---- leftover scaffold placeholders (EDS-17) ----
+    findings.extend(_scaffold_marker_findings(skill_dir, name, meta))
 
     return findings
 
