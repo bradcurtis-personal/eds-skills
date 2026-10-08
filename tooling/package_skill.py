@@ -7,7 +7,9 @@ Shared engine for the eds-skills packaging + release pipeline.
 Modes:
   check    - CI PR gate. For every skill whose files changed vs the base
              branch, require skill.json's version to have increased, and
-             run that skill's test.py.
+             run that skill's test.py, then run `skill-create --audit` on it
+             (fails on stale findings such as an untouched scaffold;
+             manual-review notes do not fail).
   release  - CI post-merge step (idempotent). For every skill in the repo,
              if no GitHub Release exists yet for its current skill.json
              version, package it as a standalone plugin, create the
@@ -86,6 +88,34 @@ def changed_skills(base_ref):
     return sorted(names)
 
 
+AUDIT_SCRIPT = Path("skills") / "skill-create" / "main.py"
+
+
+def audit_failure(name):
+    """Run skill-create's read-only audit on skills/<name>/ in this checkout
+    (EDS-36) and return a failure message, or None when it is clean.
+
+    The audit exits non-zero when it finds anything stale -- a skill that
+    still holds generated scaffold placeholders, a stale skill.json, a missing
+    file -- and when it cannot audit at all (e.g. the folder is gone). Both
+    fail the gate. Manual-review notes exit 0 and do not.
+    """
+    audit_script = REPO_ROOT / AUDIT_SCRIPT
+    if not audit_script.exists():
+        return f"{name}: cannot run the audit, {AUDIT_SCRIPT.as_posix()} is missing"
+    result = subprocess.run(
+        [sys.executable, str(audit_script), "--audit", name, "--output-dir", str(SKILLS_DIR)],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+    )
+    print(result.stdout, end="")
+    print(result.stderr, end="", file=sys.stderr)
+    if result.returncode != 0:
+        return f"{name}: skill-create --audit reported stale findings (exit {result.returncode}); see above"
+    return None
+
+
 def cmd_check(base_ref):
     skills = changed_skills(base_ref)
     if not skills:
@@ -117,6 +147,10 @@ def cmd_check(base_ref):
                 failures.append(f"{name}: test.py failed")
         else:
             print(f"  (no test.py for {name}, skipping contract test)")
+
+        audit_message = audit_failure(name)
+        if audit_message:
+            failures.append(audit_message)
 
     if failures:
         print("\nFAILED:")
