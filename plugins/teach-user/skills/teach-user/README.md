@@ -24,6 +24,7 @@ This is a pure-instruction system skill — it has no logic file (no `main.py` o
 | `skill.json` | Metadata |
 | `SKILL.md` | Cowork-invocable instructions (this is the skill's actual "logic") |
 | `README.md` | This file |
+| `SECURITY.md` | This skill's trust boundary (none: a system skill with no logic file) — see `SKILL_FRAMEWORK.md`'s `SECURITY.md` section |
 | `test.py` | Structural contract test — validates `SKILL.md` frontmatter and required behaviors are present |
 
 ## Dependencies
@@ -32,6 +33,7 @@ Requires a Notion "Learning" index page to exist and be shared with the workspac
 
 ## Version history
 
+- **1.1.3** (EDS-24) — Documentation only: the Structure table now lists `SECURITY.md`, which has shipped since 1.1.1 but was missing from the table. No behavioral change.
 - **1.1.2** (EDS-33) — Re-released so the `.plugin` ships `README.md` and `SECURITY.md` alongside `SKILL.md`; the 1.1.1 release predates that packaging change. No behavioral change.
 - **1.1.1** (EDS-7) — Added `SECURITY.md` (minimal "no trust boundary" template) to comply with `SKILL_FRAMEWORK.md`'s Physical Structure requirement, added in EDS-6. No behavioral change.
 - **1.1.0** (EDS-5) — Broadened trigger vocabulary in the description itself, added explicit negative-trigger examples, added a mid-explanation opt-out, added a depth preference (short vs. in-depth), clarified Notion logs should be cleaned-up writeups.
