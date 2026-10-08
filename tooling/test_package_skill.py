@@ -12,8 +12,12 @@ Run:  python3 tooling/test_package_skill.py
 """
 
 import ast
+import contextlib
 import hashlib
+import io
 import json
+import shutil
+import subprocess
 import sys
 import tempfile
 import zipfile
@@ -125,7 +129,83 @@ def test_unknown_stack_fails_loudly():
     raise AssertionError("an unknown stack must not be packaged silently without its logic file")
 
 
+SCAFFOLD_META = {
+    "name": "widget-maker",
+    "version": "1.0.0",
+    "category": "craft",
+    "layer": "Business Logic",
+    "rank": 1,
+    "description": "Makes widgets.",
+    "inputs": "A widget spec.",
+    "outputs": "A widget file. Protocol: direct file output.",
+    "dependencies": [],
+    "stack": ["Python"],
+    "runtime-independent": True,
+    "logging": {"level": "info", "format": "json", "backend": "flat-file"},
+}
+
+
+def run_check_on(skills_dir, name):
+    """Run cmd_check() for one changed skill that lives in skills_dir (a
+    scratch copy, never the real skills/ folder). Git is stubbed out: the
+    skill counts as new, so only its test.py and the audit decide the result.
+    Returns (exit code or 0, captured stdout)."""
+    def no_base_version(skill, ref=None):
+        if ref is not None:
+            raise subprocess.CalledProcessError(1, "git show")
+        return json.loads((Path(skills_dir) / skill / "skill.json").read_text())["version"]
+
+    saved = (ps.SKILLS_DIR, ps.changed_skills, ps.skill_version)
+    ps.SKILLS_DIR = Path(skills_dir)
+    ps.changed_skills = lambda base: [name]
+    ps.skill_version = no_base_version
+    out = io.StringIO()
+    code = 0
+    try:
+        with contextlib.redirect_stdout(out):
+            try:
+                ps.cmd_check("main")
+            except SystemExit as e:
+                code = e.code
+    finally:
+        ps.SKILLS_DIR, ps.changed_skills, ps.skill_version = saved
+    return code, out.getvalue()
+
+
+def test_check_fails_an_untouched_scaffold():
+    # EDS-36: an untouched scaffold passes its own test.py, so before the audit
+    # ran inside check it passed the PR gate.
+    with tempfile.TemporaryDirectory() as scratch:
+        skills = Path(scratch) / "skills"
+        skills.mkdir()
+        proc = subprocess.run(
+            [sys.executable, str(ps.SKILLS_DIR / "skill-create" / "main.py"),
+             "--metadata", json.dumps(SCAFFOLD_META), "--output-dir", str(skills)],
+            capture_output=True, text=True,
+        )
+        assert proc.returncode == 0, f"scaffolding failed: {proc.stdout}{proc.stderr}"
+        code, out = run_check_on(skills, "widget-maker")
+        assert code == 1, f"check must fail an untouched scaffold, got exit {code}:\n{out}"
+        assert "scaffold placeholder" in out, f"expected stale scaffold findings in output:\n{out}"
+        assert "skill-create --audit reported stale findings" in out, out
+
+
+def test_check_passes_a_finished_skill():
+    # A finished skill (a copy of the real pipeline-smoke-test) still passes;
+    # its audit may carry manual-review notes, which must not fail the gate.
+    with tempfile.TemporaryDirectory() as scratch:
+        skills = Path(scratch) / "skills"
+        skills.mkdir()
+        shutil.copytree(ps.SKILLS_DIR / "pipeline-smoke-test", skills / "pipeline-smoke-test",
+                        ignore=shutil.ignore_patterns("__pycache__"))
+        code, out = run_check_on(skills, "pipeline-smoke-test")
+        assert code == 0, f"check must pass a finished skill, got exit {code}:\n{out}"
+        assert "0 stale" in out, f"expected the audit to run and report 0 stale:\n{out}"
+
+
 if __name__ == "__main__":
+    test_check_fails_an_untouched_scaffold()
+    test_check_passes_a_finished_skill()
     test_plugin_zip_contains_skill_logic_and_docs()
     test_named_fixtures_ship_their_logic_file()
     test_regenerated_plugin_dir_matches_zip()
