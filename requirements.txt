@@ -1,0 +1,5 @@
+# Test/CI-time Python dependencies for this repo. Install with:
+#   python3 -m pip install -r requirements.txt
+# skill-create's test.py imports yaml unconditionally; skill-create's main.py
+# uses a stricter stdlib frontmatter check when PyYAML is absent.
+pyyaml==6.0.3
