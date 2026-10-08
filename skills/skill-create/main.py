@@ -336,8 +336,55 @@ def build_readme(meta, logic_filename):
     return "\n".join(lines)
 
 
+FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
+
+
+def parse_frontmatter(text):
+    """Parse SKILL.md frontmatter into a dict. Returns None if there is no
+    frontmatter block. Raises ValueError if the block is not valid YAML.
+
+    Uses yaml.safe_load when PyYAML is importable. Otherwise falls back to a
+    strict stdlib check of the shape build_skill_md() writes: a plain `name:`
+    line and a `description:` line holding a JSON-style double-quoted scalar
+    (valid YAML), decoded with json.loads.
+    """
+    match = FRONTMATTER_RE.match(text)
+    if not match:
+        return None
+    block = match.group(1)
+    try:
+        import yaml
+    except ImportError:
+        yaml = None
+    if yaml is not None:
+        try:
+            data = yaml.safe_load(block)
+        except yaml.YAMLError as e:
+            raise ValueError(f"frontmatter is not valid YAML: {e}")
+        if not isinstance(data, dict):
+            raise ValueError("frontmatter is not a YAML mapping")
+        return data
+    data = {}
+    for line in block.split("\n"):
+        key, sep, value = line.partition(": ")
+        if not sep:
+            raise ValueError(f"unparseable frontmatter line: {line!r}")
+        value = value.strip()
+        if key == "description":
+            try:
+                data[key] = json.loads(value)
+            except json.JSONDecodeError:
+                raise ValueError("description must be a double-quoted scalar")
+        else:
+            data[key] = value
+    return data
+
+
 def build_skill_md(meta):
-    frontmatter = f"---\nname: {meta['name']}\ndescription: {meta['description']}\n---\n"
+    # json.dumps output is a valid YAML double-quoted scalar, so ": ", "#",
+    # quotes, backslashes and newlines in the description are all safe.
+    description = json.dumps(meta["description"])
+    frontmatter = f"---\nname: {meta['name']}\ndescription: {description}\n---\n"
     if meta["category"] == "system":
         body = (
             f"\n# {meta['name']}\n\n"
@@ -371,6 +418,11 @@ def build_test_py(meta, logic_filename):
         "import re",
         "from pathlib import Path",
         "",
+        "try:",
+        "    import yaml",
+        "except ImportError:  # fall back to a strict stdlib check below",
+        "    yaml = None",
+        "",
         'SKILL_DIR = Path(__file__).parent',
         "REQUIRED_METADATA_FIELDS = [",
     ]
@@ -387,13 +439,24 @@ def build_test_py(meta, logic_filename):
     lines.append(f'    assert data["category"] == "{meta["category"]}"')
     lines.append("")
     lines.append("")
+    lines.append("def _parse_frontmatter(block):")
+    lines.append("    if yaml is not None:")
+    lines.append("        return yaml.safe_load(block)")
+    lines.append("    data = {}")
+    lines.append('    for line in block.split("\\n"):')
+    lines.append('        key, sep, value = line.partition(": ")')
+    lines.append('        assert sep, f"unparseable frontmatter line: {line!r}"')
+    lines.append('        data[key] = json.loads(value) if key == "description" else value.strip()')
+    lines.append("    return data")
+    lines.append("")
+    lines.append("")
     lines.append("def test_skill_md_has_valid_frontmatter():")
-    lines.append('    text = (SKILL_DIR / "SKILL.md").read_text()')
+    lines.append('    text = (SKILL_DIR / "SKILL.md").read_text(encoding="utf-8")')
     lines.append('    match = re.match(r"^---\\s*\\n(.*?)\\n---\\s*\\n", text, re.DOTALL)')
     lines.append('    assert match, "SKILL.md must start with YAML frontmatter"')
-    lines.append("    frontmatter = match.group(1)")
-    lines.append(f'    assert "name: {meta["name"]}" in frontmatter')
-    lines.append('    assert "description:" in frontmatter')
+    lines.append("    frontmatter = _parse_frontmatter(match.group(1))")
+    lines.append(f'    assert frontmatter["name"] == "{meta["name"]}"')
+    lines.append('    assert isinstance(frontmatter["description"], str) and frontmatter["description"].strip(), "SKILL.md needs a non-empty description"')
     lines.append("")
     if logic_filename:
         lines.append("")
@@ -515,10 +578,26 @@ def audit(name, skills_dir):
         findings.append(AuditFinding("stale", "SKILL.md is missing entirely -- required for every Cowork skill."))
     else:
         text = skill_md_path.read_text()
-        if not re.match(r"^---\s*\n(.*?)\n---\s*\n", text, re.DOTALL):
-            findings.append(AuditFinding("stale", "SKILL.md doesn't start with valid YAML frontmatter."))
+        try:
+            fm = parse_frontmatter(text)
+        except ValueError as e:
+            findings.append(AuditFinding("stale", f"SKILL.md frontmatter does not parse: {e}"))
         else:
-            findings.append(AuditFinding("ok", "SKILL.md has valid frontmatter."))
+            if fm is None:
+                findings.append(AuditFinding("stale", "SKILL.md doesn't start with valid YAML frontmatter."))
+            elif not isinstance(fm.get("description"), str) or not fm["description"].strip():
+                findings.append(AuditFinding("stale", "SKILL.md frontmatter has no non-empty string description."))
+            else:
+                findings.append(AuditFinding("ok", "SKILL.md has valid frontmatter (parsed as YAML)."))
+                # SKILL.md's description is the trigger text and legitimately
+                # diverges from skill.json's after scaffolding, so a mismatch is
+                # a note for a human, not a stale finding.
+                if meta is not None and fm["description"] != meta.get("description"):
+                    findings.append(AuditFinding(
+                        "note",
+                        "SKILL.md description differs from skill.json's -- fine if intentional "
+                        "(SKILL.md carries the trigger wording), otherwise reconcile them.",
+                    ))
         findings.append(AuditFinding(
             "note",
             "SKILL.md content depth can't be checked mechanically -- confirm it still matches "
