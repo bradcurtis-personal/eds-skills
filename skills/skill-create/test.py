@@ -430,6 +430,52 @@ def test_audit_flags_readme_missing_required_section():
             f"expected a stale finding about the missing README section: {findings}"
 
 
+def test_audit_flags_file_missing_from_readme_structure_table():
+    # EDS-41: the README's Structure table feeds the Notion entry, so a file in
+    # the folder that the table omits must fail the audit, naming the file.
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp)
+        skill_dir, _ = main.scaffold(_base_meta(name="short-table"), out)
+        _finish_scaffold(skill_dir)
+        readme_path = skill_dir / "README.md"
+        original = readme_path.read_text(encoding="utf-8")
+        row = next(l for l in original.splitlines() if l.startswith("| `SECURITY.md`"))
+        readme_path.write_text(original.replace(row + "\n", ""), encoding="utf-8")
+
+        stale = [f.message for f in main.audit("short-table", out) if f.status == "stale"]
+        assert any("SECURITY.md" in m and "Structure table" in m for m in stale), \
+            f"expected a stale finding naming SECURITY.md: {stale}"
+
+        readme_path.write_text(original, encoding="utf-8")
+        assert not [f for f in main.audit("short-table", out) if f.status == "stale"]
+
+
+def test_audit_notes_structure_row_for_file_that_does_not_exist():
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp)
+        skill_dir, _ = main.scaffold(_base_meta(name="ghost-row"), out)
+        _finish_scaffold(skill_dir)
+        readme_path = skill_dir / "README.md"
+        text = readme_path.read_text(encoding="utf-8")
+        readme_path.write_text(
+            text.replace("| `test.py` |", "| `ghost.py` | Not a real file |\n| `test.py` |"), encoding="utf-8")
+
+        findings = main.audit("ghost-row", out)
+        assert not [f for f in findings if f.status == "stale"], findings
+        assert any(f.status == "note" and "ghost.py" in f.message for f in findings), findings
+
+
+def test_audit_ignores_subfolders_and_dotfiles_in_structure_check():
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp)
+        skill_dir, _ = main.scaffold(_base_meta(name="extra-dirs"), out)
+        _finish_scaffold(skill_dir)
+        (skill_dir / "logs").mkdir()
+        (skill_dir / "logs" / "run.log").write_text("x", encoding="utf-8")
+        (skill_dir / ".gitkeep").write_text("", encoding="utf-8")
+        assert not [f for f in main.audit("extra-dirs", out) if f.status == "stale"]
+
+
 def test_audit_flags_extra_logic_file_after_stack_change():
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp)
