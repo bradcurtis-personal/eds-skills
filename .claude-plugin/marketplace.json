@@ -11,6 +11,12 @@
       "version": "1.0.3"
     },
     {
+      "name": "prompt-creator",
+      "source": "./plugins/prompt-creator",
+      "description": "Acts as a prompt engineer: when the user asks to write, draft or tidy a prompt for a Claude Code session, a Cowork session or a run of sequential subagents, reads the current session for context, asks only about gaps in one batch, and produces a short prompt tuned to the target.",
+      "version": "1.0.0"
+    },
+    {
       "name": "skill-create",
       "source": "./plugins/skill-create",
       "description": "Scaffolds a new skill folder that already conforms to SKILL_FRAMEWORK.md, from a declared set of metadata.",
