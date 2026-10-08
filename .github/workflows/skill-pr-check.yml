@@ -23,5 +23,8 @@ jobs:
         with:
           python-version: '3.x'
 
+      - name: Install PyYAML
+        run: python3 -m pip install pyyaml
+
       - name: Check version bump and run contract tests
         run: python3 tooling/package_skill.py check --base ${{ github.base_ref }}

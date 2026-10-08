@@ -82,6 +82,67 @@ def test_scaffolds_python_craft_skill():
         assert "TODO" in security_text  # prompts a real trust-boundary review, not silently minimal
 
 
+def _frontmatter_description(skill_dir):
+    """Parse SKILL.md's frontmatter with real YAML, as the ticket requires."""
+    import re
+    import yaml
+
+    text = (skill_dir / "SKILL.md").read_text(encoding="utf-8")
+    match = re.match(r"^---\s*\n(.*?)\n---\s*\n", text, re.DOTALL)
+    assert match, "SKILL.md must start with frontmatter"
+    return yaml.safe_load(match.group(1))["description"]
+
+
+def test_description_with_colon_space_is_valid_yaml_and_round_trips():
+    # EDS-15: an unquoted "pipeline: prints" made the frontmatter invalid YAML
+    # while the old regex-only checks still reported it valid.
+    description = "Test fixture for the eds-skills pipeline: prints a greeting with a UTC timestamp."
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp)
+        skill_dir, _ = main.scaffold(_base_meta(name="colon-skill", description=description), out)
+        assert _frontmatter_description(skill_dir) == description
+        findings = main.audit("colon-skill", out)
+        assert not any(f.status == "stale" for f in findings), findings
+
+
+def test_description_with_quotes_hash_backslash_newline_round_trips():
+    description = 'Says "hi": it\'s a # comment, C:\\path\nsecond line, ünïcode'
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp)
+        skill_dir, _ = main.scaffold(_base_meta(name="tricky-skill", description=description), out)
+        assert _frontmatter_description(skill_dir) == description
+        assert main.parse_frontmatter((skill_dir / "SKILL.md").read_text(encoding="utf-8"))["description"] == description
+
+
+def test_audit_flags_unparseable_frontmatter():
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp)
+        main.scaffold(_base_meta(name="broken-yaml"), out)
+        md = out / "broken-yaml" / "SKILL.md"
+        md.write_text("---\nname: broken-yaml\ndescription: Has a pipeline: colon\n---\n\nbody\n", encoding="utf-8")
+        findings = main.audit("broken-yaml", out)
+        assert any(f.status == "stale" and "frontmatter" in f.message for f in findings), findings
+
+
+def test_generated_test_py_catches_bad_frontmatter():
+    description = "Colon: here"
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp)
+        skill_dir, _ = main.scaffold(_base_meta(name="gen-test", description=description), out)
+        spec = importlib.util.spec_from_file_location("gen_test", skill_dir / "test.py")
+        gen = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(gen)
+        gen.test_skill_md_has_valid_frontmatter()  # passes on good output
+        (skill_dir / "SKILL.md").write_text(
+            "---\nname: gen-test\ndescription: Colon: here\n---\n", encoding="utf-8")
+        rejected = False
+        try:
+            gen.test_skill_md_has_valid_frontmatter()
+        except Exception:
+            rejected = True
+        assert rejected, "generated test.py must reject invalid YAML frontmatter"
+
+
 def test_scaffolds_instruction_only_skill_with_no_logic_file():
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp)
@@ -294,6 +355,10 @@ def test_audit_never_writes_anything():
 
 if __name__ == "__main__":
     test_scaffolds_python_craft_skill()
+    test_description_with_colon_space_is_valid_yaml_and_round_trips()
+    test_description_with_quotes_hash_backslash_newline_round_trips()
+    test_audit_flags_unparseable_frontmatter()
+    test_generated_test_py_catches_bad_frontmatter()
     test_scaffolds_instruction_only_skill_with_no_logic_file()
     test_missing_logging_bootstrap_blocks_scaffolding_by_default()
     test_missing_logging_bootstrap_override_produces_todo_stub()
