@@ -90,5 +90,6 @@ None — `skill-create` only touches the local filesystem.
 
 ## Version history
 
+- **1.1.1** (EDS-13) — `SKILL.md` now says where `main.py` lives (the folder containing `SKILL.md`, which is the same relative location in the repo and in an installed plugin) and to pass `--output-dir` when running it from an installed plugin. The packaging pipeline (`tooling/package_skill.py`) now ships `main.py`, `README.md` and `SECURITY.md` inside the `.plugin` and `plugins/skill-create/`; before this, only `SKILL.md` shipped. No change to `main.py`.
 - **1.1.0** (EDS-7) — Scaffolds and audits `SECURITY.md` for every skill, per `SKILL_FRAMEWORK.md`'s Physical Structure requirement (added in EDS-6): minimal "no trust boundary" template with a TODO by default, flagged as stale by the audit when missing.
 - **1.0.0** (EDS-3) — Initial build: create mode, update/audit mode, logging-bootstrap resolution (block by default with an explicit override), README's fixed section order (including Version history) enforced by both the scaffold and the audit, and a documentation pass (framework doc gap check, cross-skill impact check, Skills Library Notion entry drafted and confirmed before writing).
