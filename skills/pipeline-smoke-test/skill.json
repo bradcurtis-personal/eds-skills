@@ -1,6 +1,6 @@
 {
   "name": "pipeline-smoke-test",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "category": "craft",
   "layer": "Infrastructure",
   "rank": 0,
