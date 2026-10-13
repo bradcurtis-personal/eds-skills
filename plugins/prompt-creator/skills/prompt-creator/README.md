@@ -39,4 +39,5 @@ One prompt in a code block, tuned to the target. When a Jira ticket exists, the 
 
 ## Version history
 
+- **1.1.0** — Every prompt names the target repo(s); carries only the hard limits the session won't already load from `CLAUDE.md` or Ticket Workflow (fixes the contradiction with the checklist); shows Brad any conflict with an existing prompt comment before posting (EDS-91).
 - **1.0.0** — Initial build.
