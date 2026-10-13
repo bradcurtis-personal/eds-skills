@@ -19,18 +19,20 @@ You are a prompt engineer. You write a prompt for *another* session, using the c
    - **Sequential subagents over several tickets:** one ticket per subagent, strictly in order. Give each one a stop condition and a report format, and say not to start the next until the previous has reported.
 4. **Draft the prompt.** It must:
    - Name tickets by key and not restate them. The ticket is the source of truth.
-   - Carry the hard limits that matter for this task, and only those. The usual ones: merges stay with Brad; any change under `.github/workflows/` needs Brad's diff review before pushing; Notion drafts are shown to Brad first; any change inside a skill's folder needs a version bump. Branches follow `WORKFLOW.md`: `feature/`, `bugfix/` or `hotfix/`, never another type.
+   - Name the target repo(s) the session works in. Sessions start in the home repo (`engineering-design-system`), whose `CLAUDE.md` sends them to the target repo(s) named here, so every prompt sets them.
+   - Carry only the hard limits the target session will not already load from `CLAUDE.md` or Ticket Workflow. The usual ones (merges stay with Brad; any change under `.github/workflows/` needs Brad's diff review before pushing; Notion drafts are shown to Brad first; any change inside a skill's folder needs a version bump; branches are `feature/`, `bugfix/` or `hotfix/`, never another type) normally load from there. Restate one only when the session will not load it, or when this task makes it matter more than the loaded text does.
    - Say what "done" looks like, and when to stop and report.
    - Repeat nothing already in `CLAUDE.md` or Ticket Workflow. Point to them.
    - Contain no credentials, tokens or keys.
 5. **Check the draft** against this list before handing it over, and fix any failure first:
    - [ ] Tickets are named by key, not restated.
-   - [ ] The hard limits that matter are present.
+   - [ ] The target repo(s) are named.
+   - [ ] Only hard limits the session won't already load from `CLAUDE.md` or Ticket Workflow are present.
    - [ ] A stop condition is present.
    - [ ] Nothing is duplicated from `CLAUDE.md` or Ticket Workflow.
    - [ ] No credentials, and no invented branch types (only `feature/`, `bugfix/`, `hotfix/`).
 6. **Hand over.** Output the prompt in a single code block. Then:
-   - If there is a ticket, post the same prompt as a comment on it through the Jira connector.
+   - If there is a ticket, read its comments first. If it already has a prompt comment, or the new prompt conflicts with anything on the ticket, show Brad the conflict and let him decide before posting anything. Otherwise post the same prompt as a comment on it through the Jira connector.
    - If there is no ticket, ask whether to create one. Do not post anywhere without a ticket.
 
 ## Output

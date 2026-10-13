@@ -191,6 +191,18 @@ def test_skill_md_carries_hard_limits_and_self_check():
     assert body.count("- [ ]") >= 5, "SKILL.md needs the self-check list"
 
 
+def test_skill_md_has_target_repo_and_conflict_rules():
+    body = _skill_md_body()
+    for needle in (
+        "Name the target repo(s)",
+        "will not already load from `CLAUDE.md` or Ticket Workflow",
+        "The target repo(s) are named",
+        "show Brad the conflict and let him decide before posting anything",
+    ):
+        assert needle in body, f"SKILL.md missing: {needle}"
+    assert "Carry the hard limits that matter" not in body, "old contradictory hard-limits rule is back"
+
+
 def test_skill_md_stands_alone():
     body = _skill_md_body()
     assert "TODO" not in body
@@ -204,5 +216,6 @@ if __name__ == "__main__":
     test_description_says_when_to_trigger()
     test_skill_md_covers_behaviours_and_targets()
     test_skill_md_carries_hard_limits_and_self_check()
+    test_skill_md_has_target_repo_and_conflict_rules()
     test_skill_md_stands_alone()
     print("All prompt-creator contract tests passed.")
