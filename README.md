@@ -1,6 +1,6 @@
 # eds-skills
 
-Skill library for the Engineering Design System. The `engineering-design-system` repo is the only home of the governing framework documents (`SKILL_FRAMEWORK.md` in particular defines the structure every skill here must follow); the Skills Library, Ticket Workflow and Learning pages live only in Notion.
+Skill library for the Engineering Design System. The `engineering-design-system` repo is the only home of the governing framework documents (`SKILL_FRAMEWORK.md` in particular defines the structure every skill here must follow); the Skills Library and Learning pages live only in Notion, and the ticket workflow is `TICKET_WORKFLOW.md` in that repo.
 
 Each skill lives in its own folder under `/skills/`:
 - `skill.json` — metadata
