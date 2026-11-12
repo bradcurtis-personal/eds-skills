@@ -1,0 +1,5 @@
+{
+  "name": "role-assume",
+  "version": "1.0.0",
+  "description": "Declares the role an agent assumes, opens an effort segment for it, prints the role's stamp, identity, tiers and rules, closes the segment on release or switch, answers tier and credential checks, and splits transcript usage by segment with the remainder flagged as unassigned."
+}
