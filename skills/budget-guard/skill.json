@@ -1,0 +1,23 @@
+{
+  "name": "budget-guard",
+  "version": "1.0.0",
+  "category": "system",
+  "layer": null,
+  "rank": 1,
+  "description": "Stops an agent run at 75% of the five-hour usage window and reports sprint usage against the 30% weekly cap, reading the five-hour percentage from the best available source and saying so when no reading is available instead of guessing.",
+  "inputs": "For check: an optional status-line JSON file, the newest manual reading stored with `reading`, and optionally session transcript JSONL files; the five-hour calibration lines in the eds-data ledger when transcripts are used. For sprint: a sprint name and the effort events in the ledger.",
+  "outputs": "JSON on stdout. check: verdict (ok, stop, unverified or unavailable), five_hour_pct, source, confidence, lower_bound, the sources tried with the reason each was or was not used, flags and a one-line message; exit 0 ok, 3 stop, 4 unavailable or unverified. sprint: per-role and unassigned percent, the total against the cap, share of cap and a verdict (ok, over_cap or unavailable). reading: the stored reading. Readings are appended to readings.jsonl in a local state directory (default ~/.eds/budget-guard, override with EDS_BUDGET_STATE_DIR) outside every repo.",
+  "dependencies": [
+    "ledger-append skill (reads calibration and effort events from the eds-data ledger)",
+    "Five-hour calibration lines in the eds-data ledger (only for transcript-based sources)"
+  ],
+  "stack": [
+    "Python"
+  ],
+  "runtime-independent": true,
+  "logging": {
+    "level": "info",
+    "format": "json",
+    "backend": "flat-file"
+  }
+}
