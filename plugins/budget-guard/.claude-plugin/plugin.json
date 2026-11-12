@@ -1,0 +1,5 @@
+{
+  "name": "budget-guard",
+  "version": "1.0.0",
+  "description": "Stops an agent run at 75% of the five-hour usage window and reports sprint usage against the 30% weekly cap, reading the five-hour percentage from the best available source and saying so when no reading is available instead of guessing."
+}
