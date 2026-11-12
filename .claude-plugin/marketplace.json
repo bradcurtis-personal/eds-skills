@@ -5,6 +5,18 @@
   },
   "plugins": [
     {
+      "name": "effort-record",
+      "source": "./plugins/effort-record",
+      "description": "Turns session transcripts and role segments into per-role plan-usage events in the ledger, with an unassigned figure for usage no role claims, then closes a ticket's effort: totals, delta and ratio against the estimate, and the [EFFORT] comment.",
+      "version": "1.0.0"
+    },
+    {
+      "name": "ledger-append",
+      "source": "./plugins/ledger-append",
+      "description": "The one reader/writer module for the eds-data ledger: validates an event against the record schema, appends it to the right file, reads events back, and makes the data-only commit to main that eds-data allows.",
+      "version": "1.0.0"
+    },
+    {
       "name": "pipeline-smoke-test",
       "source": "./plugins/pipeline-smoke-test",
       "description": "Test fixture for the eds-skills pipeline that prints a greeting with a UTC timestamp and does nothing else.",

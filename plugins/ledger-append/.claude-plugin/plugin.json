@@ -1,0 +1,5 @@
+{
+  "name": "ledger-append",
+  "version": "1.0.0",
+  "description": "The one reader/writer module for the eds-data ledger: validates an event against the record schema, appends it to the right file, reads events back, and makes the data-only commit to main that eds-data allows."
+}
