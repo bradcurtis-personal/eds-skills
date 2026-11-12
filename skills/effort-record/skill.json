@@ -1,0 +1,24 @@
+{
+  "name": "effort-record",
+  "version": "1.0.0",
+  "category": "system",
+  "layer": null,
+  "rank": 1,
+  "description": "Turns session transcripts and role segments into per-role plan-usage events in the ledger, with an unassigned figure for usage no role claims, then closes a ticket's effort: totals, delta and ratio against the estimate, and the [EFFORT] comment.",
+  "inputs": "A ticket key, one or more session transcript JSONL files (optionally AGENT=FILE), the role segment file written by role-assume, and the ledger calibration lines. For close and report: the ledger only.",
+  "outputs": "JSON on stdout. record: the effort events appended (tokens and percent of the weekly limit per role segment and model, plus unassigned) and flags. close: per-role percent, unassigned, total, estimate, delta, ratio, the [EFFORT] comment text and the value for Jira's Actual usage (%). report: per ticket and overall totals. Events reach the ledger only through ledger-append.",
+  "dependencies": [
+    "ledger-append skill (the only reader/writer of the eds-data ledger)",
+    "role-assume's segments.jsonl (written by its assume and release commands)",
+    "Calibration lines in the eds-data ledger"
+  ],
+  "stack": [
+    "Python"
+  ],
+  "runtime-independent": true,
+  "logging": {
+    "level": "info",
+    "format": "json",
+    "backend": "flat-file"
+  }
+}
