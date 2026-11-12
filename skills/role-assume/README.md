@@ -30,6 +30,18 @@ Use the same `--agent` and `--session` on every call: the pair is how a segment 
 
 JSON on stdout for every command. Segment events (`segment_open`, `segment_close`, `capability_request`), one JSON object per line with `event_id`, `schema_version` and `ts`, are appended to `segments.jsonl` in the state directory: `~/.eds/role-segments` by default, `EDS_ROLE_STATE_DIR` or `--state-dir` to change it. That directory is a local cache outside every repo, so nothing is committed. The skill does not write the ledger: turning segment tokens into the percentage and appending effort events to `eds-data` is EDS-77's job, and it reads these segments.
 
+### Segment file format (the contract EDS-77 reads)
+
+One JSON object per line, append-only, each with `event_id`, `schema_version` (1), `ts` (ISO 8601 UTC) and `event`:
+
+| `event` | Other fields |
+|---|---|
+| `segment_open` | `segment_id`, `role` (the role's `ledger_key`), `agent`, `session`, `ticket` |
+| `segment_close` | `segment_id`, `reason` (`release` or `switch`) |
+| `capability_request` | `segment_id`, `role`, `to`, `system`, `tier`, `text` |
+
+A segment with no `segment_close` is open. Because the file is a local cache and not part of `eds-data`, `docs/RECORD_SCHEMA.md` there is unchanged; EDS-77 decides what from these segments reaches the ledger and updates that schema then.
+
 ## Structure
 
 | File | Purpose |
