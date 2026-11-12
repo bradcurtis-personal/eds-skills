@@ -5,6 +5,12 @@
   },
   "plugins": [
     {
+      "name": "budget-guard",
+      "source": "./plugins/budget-guard",
+      "description": "Stops an agent run at 75% of the five-hour usage window and reports sprint usage against the 30% weekly cap, reading the five-hour percentage from the best available source and saying so when no reading is available instead of guessing.",
+      "version": "1.0.0"
+    },
+    {
       "name": "effort-record",
       "source": "./plugins/effort-record",
       "description": "Turns session transcripts and role segments into per-role plan-usage events in the ledger, with an unassigned figure for usage no role claims, then closes a ticket's effort: totals, delta and ratio against the estimate, and the [EFFORT] comment.",
