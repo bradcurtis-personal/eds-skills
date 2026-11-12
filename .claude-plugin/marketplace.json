@@ -17,6 +17,18 @@
       "version": "1.1.0"
     },
     {
+      "name": "role-assume",
+      "source": "./plugins/role-assume",
+      "description": "Declares the role an agent assumes, opens an effort segment for it, prints the role's stamp, identity, tiers and rules, closes the segment on release or switch, answers tier and credential checks, and splits transcript usage by segment with the remainder flagged as unassigned.",
+      "version": "1.0.0"
+    },
+    {
+      "name": "role-release",
+      "source": "./plugins/role-release",
+      "description": "Closes the effort segment of the role an agent currently holds, by running role-assume's release command, so that effort after this point is not attributed to that role.",
+      "version": "1.0.0"
+    },
+    {
       "name": "skill-create",
       "source": "./plugins/skill-create",
       "description": "Scaffolds a new skill folder that already conforms to SKILL_FRAMEWORK.md, from a declared set of metadata.",

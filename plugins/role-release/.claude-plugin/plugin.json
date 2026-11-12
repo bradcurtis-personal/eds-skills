@@ -1,0 +1,5 @@
+{
+  "name": "role-release",
+  "version": "1.0.0",
+  "description": "Closes the effort segment of the role an agent currently holds, by running role-assume's release command, so that effort after this point is not attributed to that role."
+}
