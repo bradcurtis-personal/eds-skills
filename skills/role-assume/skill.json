@@ -1,0 +1,23 @@
+{
+  "name": "role-assume",
+  "version": "1.0.0",
+  "category": "system",
+  "layer": null,
+  "rank": 1,
+  "description": "Declares the role an agent assumes, opens an effort segment for it, prints the role's stamp, identity, tiers and rules, closes the segment on release or switch, answers tier and credential checks, and splits transcript usage by segment with the remainder flagged as unassigned.",
+  "inputs": "A role id from role-registry.yaml (engineering-design-system), the agent name, optionally the ticket key and session id. For attribution: the segment file and one or more session transcript JSONL files.",
+  "outputs": "JSON on stdout. assume: the segment, the stamp ([Display Name]), the commit trailer (Role: Display Name), the role's identities, tiers and default model, the role plugin to invoke, and the role-assumption rules and DO-NOT list read from ROLE_REGISTRY.md. release, status, check and attribute print JSON as well. Segment events are appended to segments.jsonl in the state directory (default ~/.eds/role-segments, override with EDS_ROLE_STATE_DIR), a local cache outside every repo.",
+  "dependencies": [
+    "PyYAML (reads role-registry.yaml)",
+    "role-registry.yaml and ROLE_REGISTRY.md in the engineering-design-system repo"
+  ],
+  "stack": [
+    "Python"
+  ],
+  "runtime-independent": true,
+  "logging": {
+    "level": "info",
+    "format": "json",
+    "backend": "flat-file"
+  }
+}

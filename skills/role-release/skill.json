@@ -1,0 +1,24 @@
+{
+  "name": "role-release",
+  "version": "1.0.0",
+  "category": "system",
+  "layer": null,
+  "rank": 1,
+  "description": "Closes the effort segment of the role an agent currently holds, by running role-assume's release command, so that effort after this point is not attributed to that role.",
+  "inputs": "The agent name and, when the agent was given one, the session id, matching what was passed to role-assume.",
+  "outputs": "The closed segment as JSON, or a flagged warning when no segment was open (effort outside a segment is recorded as unassigned).",
+  "dependencies": [
+    "role-assume"
+  ],
+  "stack": [
+    "Cowork Skill (SKILL.md)"
+  ],
+  "runtime-independent": false,
+  "logging": {
+    "level": "info",
+    "format": "json",
+    "backend": "flat-file",
+    "note": "No logic file of its own; the release command logs through role-assume."
+  },
+  "runtime-independent-rationale": "role-release is an instruction set an agent follows in the moment; the logic that closes the segment is role-assume's main.py."
+}
