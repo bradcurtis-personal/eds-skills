@@ -1,0 +1,23 @@
+{
+  "name": "ledger-append",
+  "version": "1.0.0",
+  "category": "system",
+  "layer": null,
+  "rank": 3,
+  "description": "The one reader/writer module for the eds-data ledger: validates an event against the record schema, appends it to the right file, reads events back, and makes the data-only commit to main that eds-data allows.",
+  "inputs": "An event as JSON (--event or --event-file) for append; optional ticket and event-type filters for read; the eds-data clone for commit. The ledger directory comes from --ledger-dir, EDS_LEDGER_DIR, or a sibling eds-data clone.",
+  "outputs": "JSON on stdout. append: whether a line was written and to which file. read: the events, oldest first, each with its event type set. commit: whether a data-only commit was made and pushed. Ledger lines are appended to ledger/YYYY-MM.jsonl (effort, estimate, close) or ledger/calibration.jsonl in eds-data, one JSON object per line.",
+  "dependencies": [
+    "The eds-data repo (docs/RECORD_SCHEMA.md defines the record format)",
+    "git, for the commit command"
+  ],
+  "stack": [
+    "Python"
+  ],
+  "runtime-independent": true,
+  "logging": {
+    "level": "info",
+    "format": "json",
+    "backend": "flat-file"
+  }
+}
